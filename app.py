@@ -207,6 +207,7 @@ PRODUCTS: List[Dict] = [
 ]
 
 PRODUCT_INDEX = {p["id"]: p for p in PRODUCTS}
+st.image("123456.jpg")
 
 # =========================================================
 # BLOG - 20 BÀI KIẾN THỨC CÓ SẴN
