@@ -19,7 +19,6 @@ st.set_page_config(
     page_icon="🏃",
     layout="wide",
     initial_sidebar_state="expanded",
-    st.image("123456.jpg")
 )
 
 APP_DIR = Path(__file__).resolve().parent
@@ -99,6 +98,36 @@ st.markdown(
         background:white; border:1px solid #e7e9ee; border-radius:18px;
         padding:20px; min-height:135px;
     }
+
+    .page-hero {
+        display:flex; justify-content:space-between; align-items:flex-end; gap:20px;
+        padding:24px 26px; margin-bottom:18px; border-radius:22px;
+        background:
+            radial-gradient(circle at 92% 18%, rgba(23,212,232,.15), transparent 26%),
+            linear-gradient(125deg, #FFFFFF 0%, #F3F8FF 66%, #ECFCFF 100%);
+        border:1px solid #D9E7F6; box-shadow:0 9px 28px rgba(16,34,58,.055);
+    }
+    .page-kicker {
+        display:inline-flex; padding:5px 10px; border-radius:999px;
+        background:#E9F3FF; color:#2262B5; font-size:.72rem; font-weight:900;
+        letter-spacing:.08em; margin-bottom:8px;
+    }
+    .page-hero h1 { margin:0 0 5px 0; font-size:2rem; }
+    .page-hero p { margin:0; color:#667085; line-height:1.55; }
+    .page-icon {
+        width:58px; height:58px; min-width:58px; border-radius:18px;
+        display:flex; align-items:center; justify-content:center; font-size:27px;
+        background:linear-gradient(135deg, #0B2441, #116A88);
+        box-shadow:0 10px 24px rgba(15,76,108,.20);
+        border:1px solid rgba(255,255,255,.14);
+    }
+    .shop-count {
+        display:inline-block; padding:7px 11px; border-radius:10px;
+        background:#EFF6FF; border:1px solid #D7E8FF; color:#235A9B; font-weight:800;
+        margin:5px 0 12px 0;
+    }
+    .discount-text { color:#E05A2B; font-weight:800; }
+
     .footer {
         margin-top: 38px; padding: 26px 8px; border-top:1px solid #e2e5ea;
         color:#7c8490; font-size:.88rem;
@@ -880,8 +909,20 @@ def answer_chat(query: str) -> str:
 # =========================================================
 def sidebar():
     with st.sidebar:
-        st.markdown("## 🏃 PULSE SPORT")
-        st.caption("SHOP • TRAIN • RECOVER")
+        st.markdown(
+            """
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-logo">PS</div>
+                    <div>
+                        <div class="sidebar-brand-name">PULSE SPORT</div>
+                        <div class="sidebar-brand-sub">SHOP • TRAIN • RECOVER</div>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.divider()
         page = st.radio(
             "Điều hướng",
@@ -923,7 +964,7 @@ def render_product_card(product: Dict, key_prefix="shop"):
     st.markdown(
         f"<span class='price'>{money(product['price'])}</span> &nbsp; "
         f"<span class='old-price'>{money(product['old_price'])}</span> &nbsp; "
-        f"<span class='muted'>-{discount_pct}%</span>",
+        f"<span class='discount-text'>-{discount_pct}%</span>",
         unsafe_allow_html=True,
     )
     st.caption(product["desc"])
@@ -933,6 +974,22 @@ def render_product_card(product: Dict, key_prefix="shop"):
         st.caption(f"Tồn kho demo: {product['stock']} sản phẩm")
     if st.button("Thêm vào giỏ", key=f"add_{key_prefix}_{product['id']}", type="primary", use_container_width=True):
         add_to_cart(product["id"], 1)
+
+
+def render_page_header(kicker: str, title: str, description: str, icon: str):
+    st.markdown(
+        f"""
+        <div class="page-hero">
+            <div>
+                <div class="page-kicker">{kicker}</div>
+                <h1>{title}</h1>
+                <p>{description}</p>
+            </div>
+            <div class="page-icon">{icon}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_footer():
@@ -998,8 +1055,12 @@ def page_home():
 
 
 def page_shop():
-    st.title("Cửa hàng thể thao")
-    st.caption("Tìm sản phẩm theo nhu cầu, ngân sách, mức đánh giá và danh mục.")
+    render_page_header(
+        "PULSE PERFORMANCE STORE",
+        "Cửa hàng thể thao",
+        "Tìm sản phẩm theo nhu cầu, ngân sách, mức đánh giá và danh mục.",
+        "⚡",
+    )
 
     search = st.text_input("Tìm kiếm", value=st.session_state.shop_search, placeholder="Ví dụ: giày chạy, găng tay, dây kháng lực...")
     st.session_state.shop_search = search
@@ -1039,7 +1100,7 @@ def page_shop():
     else:
         filtered.sort(key=lambda p: (-p["reviews"], -p["rating"]))
 
-    st.markdown(f"**{len(filtered)} sản phẩm phù hợp**")
+    st.markdown(f"<div class='shop-count'>{len(filtered)} sản phẩm phù hợp</div>", unsafe_allow_html=True)
     if not filtered:
         st.info("Không tìm thấy sản phẩm phù hợp bộ lọc hiện tại.")
         return
@@ -1053,7 +1114,12 @@ def page_shop():
 
 
 def page_cart():
-    st.title("Giỏ hàng & Thanh toán")
+    render_page_header(
+        "CHECKOUT",
+        "Giỏ hàng & Thanh toán",
+        "Kiểm tra sản phẩm, áp dụng ưu đãi và hoàn tất thông tin giao hàng.",
+        "🛒",
+    )
 
     if st.session_state.last_order:
         order = st.session_state.last_order
@@ -1190,8 +1256,12 @@ def page_cart():
 
 
 def page_blog():
-    st.title("Blog kiến thức thể thao")
-    st.caption("20 bài viết có sẵn để xây dựng content hub và hỗ trợ SEO/nurturing cho shop.")
+    render_page_header(
+        "PULSE KNOWLEDGE HUB",
+        "Blog kiến thức thể thao",
+        "20 bài viết nền tảng về tập luyện, dinh dưỡng, phục hồi và trang bị.",
+        "📚",
+    )
 
     search = st.text_input("Tìm bài viết", placeholder="Ví dụ: squat, chạy bộ, protein, phục hồi...")
     categories = ["Tất cả"] + sorted(set(p["category"] for p in BLOG_POSTS))
@@ -1222,8 +1292,12 @@ def page_blog():
 
 
 def page_chat():
-    st.title("🤖 SportBot — Trợ lý mua sắm & kiến thức")
-    st.caption("Chạy offline bằng rule-based retrieval nên không cần API key. Có thể nâng cấp sang LLM sau.")
+    render_page_header(
+        "SMART SPORT ASSISTANT",
+        "SportBot — Trợ lý mua sắm & kiến thức",
+        "Tư vấn sản phẩm, ngân sách, giao hàng và nội dung thể thao ngay trong app.",
+        "🤖",
+    )
 
     quick_cols = st.columns(4)
     quick_prompts = [
@@ -1260,8 +1334,12 @@ def page_chat():
 
 
 def page_orders():
-    st.title("Đơn hàng của tôi")
-    st.caption("Chỉ hiển thị các đơn được tạo trong phiên sử dụng hiện tại để tránh lộ dữ liệu của người khác.")
+    render_page_header(
+        "ORDER CENTER",
+        "Đơn hàng của tôi",
+        "Theo dõi các đơn đã tạo trong phiên sử dụng hiện tại.",
+        "📦",
+    )
     orders = load_orders(st.session_state.order_ids)
     if not orders:
         st.info("Bạn chưa tạo đơn hàng nào trong phiên này.")
