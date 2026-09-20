@@ -1,1386 +1,2635 @@
-import json
-import os
-import re
-import sqlite3
-import unicodedata
-import uuid
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List
-
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from datetime import datetime
+import random
+
 
 # =========================================================
-# CẤU HÌNH ỨNG DỤNG
+# 1. CẤU HÌNH APP
 # =========================================================
+
 st.set_page_config(
-    page_title="PULSE SPORT | Sport Shop & Knowledge Hub",
-    page_icon="🏃",
+    page_title="PULSE SPORT",
+    page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-APP_DIR = Path(__file__).resolve().parent
-ASSET_DIR = APP_DIR / "assets" / "generated"
-ASSET_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = APP_DIR / "sport_shop.db"
-
-BRAND = "PULSE SPORT"
-FREE_SHIP_THRESHOLD = 700_000
-DEFAULT_SHIPPING = 30_000
 
 # =========================================================
-# CSS - GIAO DIỆN THỂ THAO HIỆN ĐẠI
+# 2. CSS - GIAO DIỆN
 # =========================================================
+
 st.markdown(
     """
     <style>
-    :root {
-        --ink: #111318;
-        --muted: #68707f;
-        --surface: #ffffff;
-        --soft: #f4f6f8;
-        --line: #e7e9ee;
-        --lime: #d9ff43;
-        --lime-dark: #b8df16;
-        --charcoal: #171a20;
+
+    /* =====================================================
+       FONT + TOÀN TRANG
+    ===================================================== */
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+    * {
+        font-family: 'Inter', sans-serif;
     }
 
-    .stApp { background: #f7f8fa; color: var(--ink); }
-    [data-testid="stSidebar"] { background: #111318; }
-    [data-testid="stSidebar"] * { color: #f7f8fa; }
-    [data-testid="stSidebar"] .stRadio label { padding: .18rem 0; }
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at 0% 0%, rgba(0, 174, 255, 0.09), transparent 28%),
+            radial-gradient(circle at 100% 0%, rgba(185, 255, 62, 0.08), transparent 25%),
+            #f5f8fc;
+    }
+
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+        max-width: 1450px;
+    }
+
+
+    /* =====================================================
+       SIDEBAR
+    ===================================================== */
+
+    [data-testid="stSidebar"] {
+        background:
+            linear-gradient(
+                180deg,
+                #07101e 0%,
+                #0b1728 45%,
+                #08111d 100%
+            );
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+
+    [data-testid="stSidebar"] * {
+        color: #ffffff;
+    }
+
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(255,255,255,0.10);
+    }
+
+
+    /* =====================================================
+       LOGO
+    ===================================================== */
+
+    .logo-wrap {
+        padding: 12px 0 18px 0;
+    }
+
+    .logo-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .logo-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        font-weight: 900;
+        color: #07101e;
+
+        background:
+            linear-gradient(
+                135deg,
+                #baff45,
+                #67f6ff
+            );
+
+        box-shadow:
+            0 8px 25px rgba(103,246,255,0.20);
+    }
+
+    .logo-name {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: -0.5px;
+        color: white;
+    }
+
+    .logo-sub {
+        font-size: 10px;
+        font-weight: 700;
+        color: #7d91aa;
+        letter-spacing: 1.8px;
+        margin-top: -2px;
+    }
+
+
+    /* =====================================================
+       HERO
+    ===================================================== */
 
     .hero {
-        border-radius: 28px;
-        padding: 42px 42px;
-        background:
-            radial-gradient(circle at 85% 20%, rgba(217,255,67,.26), transparent 34%),
-            linear-gradient(135deg, #111318 0%, #252a34 100%);
-        color: white;
-        overflow: hidden;
         position: relative;
-        box-shadow: 0 16px 45px rgba(17,19,24,.18);
-        margin-bottom: 18px;
-    }
-    .hero h1 { font-size: 3rem; line-height: 1.02; margin: 0 0 14px 0; }
-    .hero p { color: #d7dbe3; font-size: 1.05rem; max-width: 720px; }
-    .hero-badge {
-        display: inline-block; padding: 8px 12px; border-radius: 999px;
-        background: var(--lime); color: #111318; font-weight: 800; margin-bottom: 16px;
-    }
+        overflow: hidden;
 
-    .section-title { margin-top: 16px; margin-bottom: 8px; }
-    .muted { color: var(--muted); }
-    .price { font-size: 1.2rem; font-weight: 850; color: #111318; }
-    .old-price { text-decoration: line-through; color: #8a909b; font-size: .9rem; }
-    .rating { color: #555f6f; font-size: .92rem; }
-    .pill {
-        display:inline-block; padding:5px 9px; border-radius:999px;
-        background:#eef1f4; margin-right:5px; margin-bottom:5px; font-size:.78rem;
-    }
-    .sale-pill {
-        display:inline-block; padding:5px 9px; border-radius:999px;
-        background:#111318; color:#d9ff43; font-size:.76rem; font-weight:800;
-    }
-    .notice {
-        background:#f0ffd0; border:1px solid #d9ff43; border-radius:14px;
-        padding:13px 15px; color:#252a34;
-    }
-    .blog-card {
-        background:white; border:1px solid #e7e9ee; border-radius:18px;
-        padding:20px; min-height:170px; box-shadow:0 7px 20px rgba(20,25,35,.05);
-        margin-bottom: 12px;
-    }
-    .blog-meta { color:#7b8391; font-size:.82rem; }
-    .feature {
-        background:white; border:1px solid #e7e9ee; border-radius:18px;
-        padding:20px; min-height:135px;
-    }
+        min-height: 360px;
 
-    .page-hero {
-        display:flex; justify-content:space-between; align-items:flex-end; gap:20px;
-        padding:24px 26px; margin-bottom:18px; border-radius:22px;
+        border-radius: 32px;
+
+        padding:
+            58px
+            60px;
+
         background:
-            radial-gradient(circle at 92% 18%, rgba(23,212,232,.15), transparent 26%),
-            linear-gradient(125deg, #FFFFFF 0%, #F3F8FF 66%, #ECFCFF 100%);
-        border:1px solid #D9E7F6; box-shadow:0 9px 28px rgba(16,34,58,.055);
+            radial-gradient(
+                circle at 85% 15%,
+                rgba(95, 241, 255, 0.40),
+                transparent 30%
+            ),
+            radial-gradient(
+                circle at 80% 100%,
+                rgba(190, 255, 55, 0.25),
+                transparent 30%
+            ),
+            linear-gradient(
+                120deg,
+                #06101d 0%,
+                #0a2854 53%,
+                #026c93 100%
+            );
+
+        box-shadow:
+            0 25px 70px rgba(10, 34, 64, 0.20);
+
+        margin-bottom: 28px;
     }
-    .page-kicker {
-        display:inline-flex; padding:5px 10px; border-radius:999px;
-        background:#E9F3FF; color:#2262B5; font-size:.72rem; font-weight:900;
-        letter-spacing:.08em; margin-bottom:8px;
+
+    .hero::after {
+        content: "";
+        position: absolute;
+
+        width: 280px;
+        height: 280px;
+
+        right: -30px;
+        top: -50px;
+
+        border-radius: 50%;
+
+        border:
+            42px solid
+            rgba(255,255,255,0.06);
     }
-    .page-hero h1 { margin:0 0 5px 0; font-size:2rem; }
-    .page-hero p { margin:0; color:#667085; line-height:1.55; }
-    .page-icon {
-        width:58px; height:58px; min-width:58px; border-radius:18px;
-        display:flex; align-items:center; justify-content:center; font-size:27px;
-        background:linear-gradient(135deg, #0B2441, #116A88);
-        box-shadow:0 10px 24px rgba(15,76,108,.20);
-        border:1px solid rgba(255,255,255,.14);
+
+    .hero-badge {
+        display: inline-block;
+
+        padding:
+            8px
+            14px;
+
+        border-radius: 999px;
+
+        font-size: 11px;
+        font-weight: 800;
+
+        color: #baff45;
+
+        background:
+            rgba(186,255,69,0.08);
+
+        border:
+            1px solid rgba(186,255,69,0.18);
+
+        letter-spacing: 1.2px;
+
+        margin-bottom: 20px;
     }
-    .shop-count {
-        display:inline-block; padding:7px 11px; border-radius:10px;
-        background:#EFF6FF; border:1px solid #D7E8FF; color:#235A9B; font-weight:800;
-        margin:5px 0 12px 0;
+
+    .hero h1 {
+        font-size: 54px;
+        line-height: 1.05;
+        letter-spacing: -2px;
+
+        max-width: 800px;
+
+        color: white;
+
+        font-weight: 900;
+
+        margin:
+            0 0 18px 0;
     }
-    .discount-text { color:#E05A2B; font-weight:800; }
+
+    .hero p {
+        max-width: 680px;
+
+        font-size: 17px;
+        line-height: 1.7;
+
+        color: #c4d7e9;
+
+        margin: 0;
+    }
+
+
+    /* =====================================================
+       SECTION TITLE
+    ===================================================== */
+
+    .section-wrap {
+        margin-top: 38px;
+        margin-bottom: 16px;
+    }
+
+    .section-kicker {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+
+        color: #1686ff;
+
+        text-transform: uppercase;
+
+        margin-bottom: 6px;
+    }
+
+    .section-title {
+        font-size: 30px;
+        font-weight: 900;
+
+        color: #0b1728;
+
+        letter-spacing: -0.8px;
+
+        margin: 0;
+    }
+
+    .section-desc {
+        margin-top: 5px;
+
+        font-size: 14px;
+        line-height: 1.6;
+
+        color: #708196;
+    }
+
+
+    /* =====================================================
+       STAT CARDS
+    ===================================================== */
+
+    .stat-card {
+        background: rgba(255,255,255,0.95);
+
+        border:
+            1px solid #e4eaf1;
+
+        border-radius: 22px;
+
+        padding:
+            24px;
+
+        min-height: 130px;
+
+        box-shadow:
+            0 12px 35px
+            rgba(31, 51, 73, 0.06);
+
+        transition:
+            all 0.25s ease;
+    }
+
+    .stat-card:hover {
+        transform:
+            translateY(-4px);
+
+        box-shadow:
+            0 18px 45px
+            rgba(31, 51, 73, 0.11);
+    }
+
+    .stat-icon {
+        font-size: 24px;
+
+        margin-bottom: 14px;
+    }
+
+    .stat-number {
+        font-size: 26px;
+        font-weight: 900;
+
+        color: #07101e;
+    }
+
+    .stat-label {
+        font-size: 12px;
+        font-weight: 700;
+
+        color: #8391a2;
+
+        margin-top: 4px;
+    }
+
+
+    /* =====================================================
+       CATEGORY CARDS
+    ===================================================== */
+
+    .category-card {
+        min-height: 180px;
+
+        border-radius: 24px;
+
+        padding:
+            25px;
+
+        background:
+            linear-gradient(
+                145deg,
+                #ffffff,
+                #f5f8fd
+            );
+
+        border:
+            1px solid #e4eaf1;
+
+        box-shadow:
+            0 12px 30px
+            rgba(31,51,73,0.05);
+
+        transition:
+            all 0.25s ease;
+    }
+
+    .category-card:hover {
+        transform:
+            translateY(-5px);
+
+        border-color:
+            #afd5ff;
+
+        box-shadow:
+            0 20px 45px
+            rgba(31,51,73,0.11);
+    }
+
+    .category-icon {
+        width: 52px;
+        height: 52px;
+
+        border-radius: 16px;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        font-size: 25px;
+
+        background:
+            linear-gradient(
+                145deg,
+                #eaf5ff,
+                #edfaff
+            );
+
+        margin-bottom: 17px;
+    }
+
+    .category-title {
+        font-size: 17px;
+        font-weight: 800;
+
+        color: #0a1727;
+
+        margin-bottom: 7px;
+    }
+
+    .category-desc {
+        font-size: 12px;
+        line-height: 1.6;
+
+        color: #7b899b;
+    }
+
+
+    /* =====================================================
+       PRODUCT CARD
+    ===================================================== */
+
+    .product-card {
+        background: #ffffff;
+
+        border:
+            1px solid #e5eaf0;
+
+        border-radius: 26px;
+
+        padding:
+            16px;
+
+        box-shadow:
+            0 12px 35px
+            rgba(31,51,73,0.06);
+
+        min-height: 505px;
+
+        transition:
+            all 0.25s ease;
+
+        margin-bottom: 15px;
+    }
+
+    .product-card:hover {
+        transform:
+            translateY(-6px);
+
+        box-shadow:
+            0 24px 55px
+            rgba(31,51,73,0.13);
+
+        border-color:
+            #b7d8fc;
+    }
+
+    .product-visual {
+        height: 220px;
+
+        border-radius: 20px;
+
+        display:
+            flex;
+
+        align-items:
+            center;
+
+        justify-content:
+            center;
+
+        background:
+            radial-gradient(
+                circle at 50% 40%,
+                rgba(84,218,255,0.28),
+                transparent 40%
+            ),
+            linear-gradient(
+                140deg,
+                #09182b,
+                #123861
+            );
+
+        position:
+            relative;
+
+        overflow:
+            hidden;
+
+        margin-bottom: 16px;
+    }
+
+    .product-visual::before {
+        content: "";
+
+        width: 170px;
+        height: 170px;
+
+        border-radius: 50%;
+
+        position: absolute;
+
+        background:
+            rgba(255,255,255,0.04);
+
+        border:
+            1px solid rgba(255,255,255,0.08);
+    }
+
+    .product-emoji {
+        font-size: 74px;
+
+        position: relative;
+
+        z-index: 2;
+
+        filter:
+            drop-shadow(
+                0 10px 12px
+                rgba(0,0,0,0.25)
+            );
+    }
+
+    .badge-hot {
+        position: absolute;
+
+        top: 13px;
+        left: 13px;
+
+        padding:
+            7px 10px;
+
+        border-radius: 999px;
+
+        font-size: 9px;
+        font-weight: 900;
+
+        color: #07101e;
+
+        background:
+            #baff45;
+
+        z-index: 3;
+    }
+
+    .badge-discount {
+        position: absolute;
+
+        top: 13px;
+        right: 13px;
+
+        padding:
+            7px 10px;
+
+        border-radius: 999px;
+
+        font-size: 10px;
+        font-weight: 900;
+
+        color: #ffffff;
+
+        background:
+            #ff5247;
+
+        z-index: 3;
+    }
+
+    .product-category {
+        color: #1686ff;
+
+        font-size: 10px;
+        font-weight: 800;
+
+        text-transform: uppercase;
+
+        letter-spacing: 0.8px;
+
+        margin-bottom: 7px;
+    }
+
+    .product-name {
+        font-size: 16px;
+
+        font-weight: 850;
+
+        line-height: 1.35;
+
+        color: #07101e;
+
+        min-height: 44px;
+
+        margin-bottom: 8px;
+    }
+
+    .rating {
+        color: #ffad20;
+
+        font-size: 12px;
+
+        font-weight: 700;
+
+        margin-bottom: 10px;
+    }
+
+    .product-desc {
+        font-size: 12px;
+
+        color: #7b899b;
+
+        line-height: 1.6;
+
+        min-height: 58px;
+    }
+
+    .price-row {
+        display: flex;
+
+        align-items: center;
+
+        gap: 10px;
+
+        margin-top: 14px;
+    }
+
+    .price {
+        font-size: 21px;
+
+        font-weight: 900;
+
+        color: #081726;
+    }
+
+    .old-price {
+        font-size: 12px;
+
+        color: #9aa7b5;
+
+        text-decoration:
+            line-through;
+    }
+
+
+    /* =====================================================
+       PRODUCT DETAIL MINI INFO
+    ===================================================== */
+
+    .mini-info {
+        padding:
+            10px 13px;
+
+        border-radius:
+            12px;
+
+        background:
+            #f5f8fc;
+
+        font-size:
+            11px;
+
+        color:
+            #6f7f90;
+
+        margin-top:
+            10px;
+    }
+
+
+    /* =====================================================
+       BLOG
+    ===================================================== */
+
+    .blog-card {
+        background:
+            #ffffff;
+
+        border:
+            1px solid #e4eaf1;
+
+        border-radius:
+            22px;
+
+        padding:
+            22px;
+
+        min-height:
+            260px;
+
+        box-shadow:
+            0 12px 30px
+            rgba(31,51,73,0.05);
+
+        transition:
+            all 0.25s ease;
+
+        margin-bottom:
+            15px;
+    }
+
+    .blog-card:hover {
+        transform:
+            translateY(-4px);
+
+        box-shadow:
+            0 18px 40px
+            rgba(31,51,73,0.10);
+    }
+
+    .blog-icon {
+        width:
+            48px;
+
+        height:
+            48px;
+
+        display:
+            flex;
+
+        align-items:
+            center;
+
+        justify-content:
+            center;
+
+        border-radius:
+            14px;
+
+        font-size:
+            23px;
+
+        background:
+            #edf7ff;
+
+        margin-bottom:
+            17px;
+    }
+
+    .blog-tag {
+        font-size:
+            10px;
+
+        font-weight:
+            800;
+
+        color:
+            #1686ff;
+
+        text-transform:
+            uppercase;
+
+        letter-spacing:
+            1px;
+    }
+
+    .blog-title {
+        font-size:
+            18px;
+
+        font-weight:
+            850;
+
+        color:
+            #07101e;
+
+        line-height:
+            1.4;
+
+        margin-top:
+            8px;
+
+        min-height:
+            52px;
+    }
+
+    .blog-desc {
+        font-size:
+            12px;
+
+        line-height:
+            1.7;
+
+        color:
+            #788799;
+
+        margin-top:
+            8px;
+    }
+
+
+    /* =====================================================
+       CHECKOUT BOX
+    ===================================================== */
+
+    .checkout-summary {
+        background:
+            linear-gradient(
+                145deg,
+                #07101e,
+                #0c2340
+            );
+
+        padding:
+            26px;
+
+        border-radius:
+            24px;
+
+        color:
+            white;
+
+        box-shadow:
+            0 18px 40px
+            rgba(7,16,30,0.18);
+    }
+
+    .checkout-summary h3 {
+        color:
+            white;
+
+        margin-top:
+            0;
+    }
+
+    .checkout-line {
+        display:
+            flex;
+
+        justify-content:
+            space-between;
+
+        padding:
+            9px 0;
+
+        color:
+            #b8c8db;
+
+        font-size:
+            13px;
+
+        border-bottom:
+            1px solid rgba(255,255,255,0.06);
+    }
+
+    .checkout-total {
+        display:
+            flex;
+
+        justify-content:
+            space-between;
+
+        padding-top:
+            16px;
+
+        font-weight:
+            900;
+
+        font-size:
+            20px;
+
+        color:
+            #baff45;
+    }
+
+
+    /* =====================================================
+       CHATBOT
+    ===================================================== */
+
+    .bot-header {
+        background:
+            linear-gradient(
+                135deg,
+                #07101e,
+                #10467c
+            );
+
+        color:
+            white;
+
+        padding:
+            25px;
+
+        border-radius:
+            24px;
+
+        margin-bottom:
+            20px;
+    }
+
+    .bot-status {
+        display:
+            inline-block;
+
+        width:
+            8px;
+
+        height:
+            8px;
+
+        border-radius:
+            50%;
+
+        background:
+            #baff45;
+
+        margin-right:
+            5px;
+    }
+
+
+    /* =====================================================
+       SUCCESS BOX
+    ===================================================== */
+
+    .success-box {
+        padding:
+            28px;
+
+        border-radius:
+            24px;
+
+        background:
+            linear-gradient(
+                135deg,
+                #eaffc9,
+                #e7fbff
+            );
+
+        border:
+            1px solid #c9f39e;
+
+        text-align:
+            center;
+    }
+
+    .success-box h2 {
+        color:
+            #1c5623;
+    }
+
+
+    /* =====================================================
+       FOOTER
+    ===================================================== */
 
     .footer {
-        margin-top: 38px; padding: 26px 8px; border-top:1px solid #e2e5ea;
-        color:#7c8490; font-size:.88rem;
+        margin-top:
+            70px;
+
+        padding:
+            30px;
+
+        background:
+            #07101e;
+
+        border-radius:
+            24px;
+
+        color:
+            #8ea0b5;
+
+        text-align:
+            center;
+
+        font-size:
+            12px;
     }
-    div.stButton > button, div.stFormSubmitButton > button {
-        border-radius:12px; font-weight:750; min-height:42px;
+
+
+    /* =====================================================
+       STREAMLIT BUTTON
+    ===================================================== */
+
+    .stButton > button {
+        border:
+            none;
+
+        border-radius:
+            12px;
+
+        font-weight:
+            750;
+
+        min-height:
+            43px;
+
+        transition:
+            all 0.2s ease;
+
+        background:
+            linear-gradient(
+                135deg,
+                #1686ff,
+                #00b7db
+            );
+
+        color:
+            white;
     }
-    div.stButton > button[kind="primary"], div.stFormSubmitButton > button[kind="primary"] {
-        background:#171a20; border-color:#171a20;
+
+    .stButton > button:hover {
+        transform:
+            translateY(-2px);
+
+        box-shadow:
+            0 8px 18px
+            rgba(22,134,255,0.24);
+
+        color:
+            white;
+
+        border:
+            none;
     }
-    [data-testid="stMetric"] {
-        background:white; border:1px solid #e7e9ee; border-radius:16px; padding:12px 16px;
+
+
+    /* =====================================================
+       INPUT
+    ===================================================== */
+
+    [data-baseweb="input"] {
+        border-radius:
+            12px;
     }
+
+    [data-baseweb="select"] > div {
+        border-radius:
+            12px;
+    }
+
+
+    /* =====================================================
+       RESPONSIVE
+    ===================================================== */
+
+    @media(max-width: 768px) {
+
+        .hero {
+            padding:
+                35px
+                25px;
+
+            min-height:
+                auto;
+        }
+
+        .hero h1 {
+            font-size:
+                36px;
+        }
+
+        .hero p {
+            font-size:
+                14px;
+        }
+
+    }
+
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
-# =========================================================
-# DỮ LIỆU SẢN PHẨM
-# =========================================================
-PRODUCTS: List[Dict] = [
-    {
-        "id": "SP001", "name": "Áo Training Dry-Fit Pro", "category": "Quần áo",
-        "price": 329_000, "old_price": 399_000, "rating": 4.8, "reviews": 186, "stock": 34,
-        "badge": "Bán chạy", "color": (35, 41, 53), "accent": (217, 255, 67),
-        "desc": "Áo tập co giãn 4 chiều, thoát ẩm nhanh, phù hợp gym, chạy bộ và vận động cường độ cao.",
-        "specs": ["Polyester pha Spandex", "Co giãn 4 chiều", "Nhanh khô", "Size S–XXL"],
-    },
-    {
-        "id": "SP002", "name": "Quần Short Flex 2-in-1", "category": "Quần áo",
-        "price": 389_000, "old_price": 459_000, "rating": 4.7, "reviews": 122, "stock": 28,
-        "badge": "Mới", "color": (31, 67, 86), "accent": (79, 217, 255),
-        "desc": "Quần short thể thao 2 lớp hỗ trợ vận động linh hoạt, có túi khóa kéo và lớp lót ôm nhẹ.",
-        "specs": ["Thiết kế 2 lớp", "Túi khóa kéo", "Cạp co giãn", "Size M–XXL"],
-    },
-    {
-        "id": "SP003", "name": "Giày Running Velocity X", "category": "Giày thể thao",
-        "price": 1_290_000, "old_price": 1_490_000, "rating": 4.9, "reviews": 244, "stock": 16,
-        "badge": "Top Rated", "color": (44, 44, 56), "accent": (255, 121, 63),
-        "desc": "Giày chạy hằng ngày với đệm êm, upper thoáng khí và đế bám tốt cho đường nhựa.",
-        "specs": ["Trọng lượng ~275 g", "Đệm EVA đàn hồi", "Mesh thoáng khí", "Size 38–44"],
-    },
-    {
-        "id": "SP004", "name": "Găng Tay Gym GripMax", "category": "Găng & phụ kiện",
-        "price": 219_000, "old_price": 259_000, "rating": 4.6, "reviews": 98, "stock": 52,
-        "badge": "Phổ biến", "color": (43, 43, 43), "accent": (240, 222, 92),
-        "desc": "Găng tập có đệm lòng bàn tay, tăng độ bám và hạn chế chai tay khi tập tạ, kéo xà.",
-        "specs": ["Đệm lòng bàn tay", "Vải thoáng khí", "Dây cổ tay Velcro", "Size M/L/XL"],
-    },
-    {
-        "id": "SP005", "name": "Dây Kháng Lực PowerBand Set", "category": "Dụng cụ tập",
-        "price": 349_000, "old_price": 420_000, "rating": 4.8, "reviews": 151, "stock": 41,
-        "badge": "Combo", "color": (53, 62, 73), "accent": (141, 255, 112),
-        "desc": "Bộ 5 dây kháng lực nhiều mức tải, đi kèm tay cầm, neo cửa và túi đựng tiện lợi.",
-        "specs": ["5 mức kháng lực", "Tay cầm chống trượt", "Neo cửa", "Túi đựng"],
-    },
-    {
-        "id": "SP006", "name": "Thảm Yoga Balance 6mm", "category": "Yoga & Mobility",
-        "price": 459_000, "old_price": 520_000, "rating": 4.8, "reviews": 117, "stock": 25,
-        "badge": "Êm & bám", "color": (82, 56, 98), "accent": (236, 160, 255),
-        "desc": "Thảm yoga 6mm chống trượt hai mặt, độ đàn hồi tốt và dễ vệ sinh sau khi tập.",
-        "specs": ["Dày 6mm", "Hai mặt chống trượt", "Dễ vệ sinh", "Kèm dây mang"],
-    },
-    {
-        "id": "SP007", "name": "Bình Nước SportFlow 1L", "category": "Găng & phụ kiện",
-        "price": 189_000, "old_price": 219_000, "rating": 4.5, "reviews": 73, "stock": 68,
-        "badge": "Tiện dụng", "color": (29, 74, 89), "accent": (82, 234, 255),
-        "desc": "Bình nước dung tích 1 lít có vạch thời gian nhắc uống, nắp khóa chống rò rỉ.",
-        "specs": ["Dung tích 1L", "BPA-free", "Nắp khóa", "Vạch nhắc uống"],
-    },
-    {
-        "id": "SP008", "name": "Con Lăn Foam Roller Core", "category": "Yoga & Mobility",
-        "price": 299_000, "old_price": 350_000, "rating": 4.7, "reviews": 91, "stock": 37,
-        "badge": "Recovery", "color": (49, 55, 70), "accent": (255, 132, 159),
-        "desc": "Foam roller mật độ cao hỗ trợ thả lỏng cơ, mobility và phục hồi sau buổi tập.",
-        "specs": ["Dài 33cm", "EVA mật độ cao", "Bề mặt massage", "Dễ vệ sinh"],
-    },
-    {
-        "id": "SP009", "name": "Dây Nhảy Speed Rope Pro", "category": "Dụng cụ tập",
-        "price": 259_000, "old_price": 299_000, "rating": 4.7, "reviews": 109, "stock": 44,
-        "badge": "Cardio", "color": (57, 45, 45), "accent": (255, 181, 71),
-        "desc": "Dây nhảy tốc độ dùng vòng bi mượt, chiều dài tùy chỉnh, phù hợp cardio và boxing.",
-        "specs": ["Vòng bi tốc độ", "Dây thép bọc PVC", "Tùy chỉnh chiều dài", "Tay cầm nhẹ"],
-    },
-    {
-        "id": "SP010", "name": "Đai Lưng Tập Tạ StrongLift", "category": "Găng & phụ kiện",
-        "price": 499_000, "old_price": 590_000, "rating": 4.8, "reviews": 135, "stock": 22,
-        "badge": "Strength", "color": (48, 39, 34), "accent": (230, 191, 121),
-        "desc": "Đai hỗ trợ thân người khi squat/deadlift nặng, bản lưng chắc và khóa kim loại bền.",
-        "specs": ["Bản lưng 10cm", "Khóa kim loại", "Lót êm", "Size S–XL"],
-    },
-    {
-        "id": "SP011", "name": "Kettlebell 12kg IronCore", "category": "Dụng cụ tập",
-        "price": 749_000, "old_price": 820_000, "rating": 4.9, "reviews": 68, "stock": 14,
-        "badge": "Home Gym", "color": (38, 42, 48), "accent": (217, 255, 67),
-        "desc": "Kettlebell 12kg phủ sơn tĩnh điện, tay cầm rộng cho swing, goblet squat và conditioning.",
-        "specs": ["Khối lượng 12kg", "Gang đúc nguyên khối", "Sơn tĩnh điện", "Đế phẳng"],
-    },
-    {
-        "id": "SP012", "name": "Túi Gym Urban Athlete 28L", "category": "Găng & phụ kiện",
-        "price": 579_000, "old_price": 650_000, "rating": 4.7, "reviews": 84, "stock": 19,
-        "badge": "Lifestyle", "color": (34, 49, 57), "accent": (111, 219, 255),
-        "desc": "Túi gym 28L có ngăn giày riêng, ngăn đồ ướt và nhiều khoang nhỏ cho phụ kiện cá nhân.",
-        "specs": ["Dung tích 28L", "Ngăn giày riêng", "Ngăn chống ẩm", "Dây đeo tháo rời"],
-    },
-]
-
-PRODUCT_INDEX = {p["id"]: p for p in PRODUCTS}
 
 # =========================================================
-# BLOG - 20 BÀI KIẾN THỨC CÓ SẴN
+# 3. DỮ LIỆU SẢN PHẨM
 # =========================================================
-BLOG_POSTS = [
+
+PRODUCTS = [
+
     {
-        "id": 1, "title": "Khởi động đúng cách trước khi tập: 8–10 phút có thể làm gì?",
-        "category": "Nền tảng tập luyện", "read": "6 phút", "date": "12/09/2026",
-        "excerpt": "Một quy trình khởi động ngắn nhưng có cấu trúc giúp cơ thể sẵn sàng hơn cho buổi tập.",
-        "content": """
-### Vì sao cần khởi động?
-Khởi động không chỉ là làm nóng người. Mục tiêu là tăng dần nhịp tim, đưa khớp qua biên độ vận động phù hợp và tập thử chính chuyển động sắp thực hiện ở cường độ thấp.
-
-### Quy trình 8–10 phút
-1. **2–3 phút vận động nhẹ:** đi bộ nhanh, đạp xe hoặc nhảy dây nhẹ.
-2. **3 phút mobility động:** xoay vai, hip opener, leg swing, ankle rock.
-3. **3–4 phút bài đặc hiệu:** nếu chuẩn bị squat, hãy squat không tạ rồi tăng tải qua vài set nhẹ.
-
-### Cần tránh
-Không nên biến khởi động thành một buổi cardio dài khiến cơ thể mệt trước phần chính. Với phần lớn buổi tập sức mạnh, hãy ưu tiên chuyển động động và set làm nóng thay vì kéo giãn tĩnh quá lâu ngay trước khi nâng nặng.
-
-> Mẹo thực hành: khởi động nên liên quan trực tiếp đến bài tập chính trong ngày.
-""",
+        "id": 1,
+        "name": "Áo Training Performance Pro",
+        "category": "Quần áo",
+        "price": 349000,
+        "old_price": 449000,
+        "rating": 4.9,
+        "reviews": 218,
+        "stock": 32,
+        "emoji": "👕",
+        "badge": "BEST SELLER",
+        "desc": "Áo tập dry-fit co giãn, thoáng khí và phù hợp tập gym."
     },
+
     {
-        "id": 2, "title": "Lịch tập sức mạnh 3 buổi/tuần cho người mới bắt đầu",
-        "category": "Gym & Strength", "read": "7 phút", "date": "10/09/2026",
-        "excerpt": "Mẫu lịch toàn thân đơn giản, tập trung vào kỹ thuật và khả năng duy trì lâu dài.",
-        "content": """
-### Mục tiêu của người mới
-Trong giai đoạn đầu, ưu tiên lớn nhất là học kỹ thuật, hình thành thói quen và tăng dần khối lượng tập một cách có kiểm soát.
-
-### Mẫu lịch
-**Buổi A:** Squat 3×8, Push-up/Bench Press 3×8–10, Row 3×10, Plank 3 hiệp.  
-**Buổi B:** Romanian Deadlift 3×8, Overhead Press 3×8, Lat Pulldown 3×10, Split Squat 3×8 mỗi bên.  
-**Buổi C:** Leg Press 3×10, Incline Press 3×10, Seated Row 3×10, Hip Thrust 3×10.
-
-### Tăng tiến
-Khi bạn hoàn thành đủ số reps với kỹ thuật ổn trong 2–3 buổi liên tiếp, có thể tăng nhẹ mức tạ hoặc tăng 1–2 reps. Không cần tăng tải mỗi buổi nếu form bắt đầu xấu.
-
-### Nghỉ ngơi
-Chừa ít nhất một ngày nghỉ giữa các buổi toàn thân nếu cơ thể chưa quen. Giấc ngủ và dinh dưỡng có ảnh hưởng lớn đến khả năng phục hồi.
-""",
+        "id": 2,
+        "name": "Quần Short Training 2-in-1",
+        "category": "Quần áo",
+        "price": 429000,
+        "old_price": 549000,
+        "rating": 4.8,
+        "reviews": 164,
+        "stock": 27,
+        "emoji": "🩳",
+        "badge": "HOT",
+        "desc": "Thiết kế 2 lớp hỗ trợ vận động mạnh và tập luyện cường độ cao."
     },
+
     {
-        "id": 3, "title": "Chạy bộ cho người mới: bắt đầu thế nào để không quá sức?",
-        "category": "Chạy bộ", "read": "6 phút", "date": "08/09/2026",
-        "excerpt": "Bắt đầu bằng run-walk và tăng khối lượng chậm thường dễ duy trì hơn chạy liên tục ngay từ đầu.",
-        "content": """
-### Đừng bắt đầu bằng tốc độ
-Người mới nên ưu tiên thời lượng và sự đều đặn. Một buổi 25–30 phút có thể xen kẽ 2 phút chạy nhẹ với 1 phút đi bộ.
-
-### Nhịp độ phù hợp
-Phần lớn thời gian nên ở mức bạn vẫn có thể nói được câu ngắn. Nếu thở gấp liên tục, hãy giảm tốc hoặc đi bộ.
-
-### Tăng tải từ từ
-Chỉ tăng một yếu tố chính mỗi giai đoạn: tổng thời gian, số buổi hoặc tốc độ. Việc tăng tất cả cùng lúc dễ khiến cơ thể không kịp thích nghi.
-
-### Trang bị
-Giày vừa chân, tất phù hợp và quần áo thoát ẩm thường quan trọng hơn việc mua quá nhiều phụ kiện ngay từ đầu.
-""",
+        "id": 3,
+        "name": "Pulse Runner X1",
+        "category": "Giày",
+        "price": 1390000,
+        "old_price": 1690000,
+        "rating": 4.9,
+        "reviews": 351,
+        "stock": 18,
+        "emoji": "👟",
+        "badge": "TOP RATED",
+        "desc": "Giày chạy đệm êm, trọng lượng nhẹ và hỗ trợ chạy hàng ngày."
     },
+
     {
-        "id": 4, "title": "Bài tập toàn thân tại nhà chỉ với dây kháng lực",
-        "category": "Tập tại nhà", "read": "7 phút", "date": "05/09/2026",
-        "excerpt": "Một buổi full-body gọn nhẹ dành cho ngày bận rộn hoặc khi không đến phòng gym.",
-        "content": """
-### Cấu trúc buổi tập
-Thực hiện 3 vòng, nghỉ 45–75 giây giữa các bài tùy thể lực.
-
-- Band Squat: 12–15 reps
-- Band Row: 12–15 reps
-- Chest Press: 10–15 reps
-- Romanian Deadlift: 12 reps
-- Shoulder Press: 10–12 reps
-- Pallof Press: 10 reps mỗi bên
-
-### Chọn mức kháng lực
-Mức dây phù hợp là khi 2–3 reps cuối có thử thách nhưng bạn vẫn kiểm soát được tốc độ và biên độ.
-
-### Cách tăng độ khó
-Tăng số reps, dùng dây nặng hơn, giảm thời gian nghỉ hoặc thực hiện chuyển động chậm hơn. Không cần thay toàn bộ bài tập mỗi tuần.
-""",
+        "id": 4,
+        "name": "Găng tay Gym Grip Pro",
+        "category": "Phụ kiện",
+        "price": 259000,
+        "old_price": 329000,
+        "rating": 4.7,
+        "reviews": 120,
+        "stock": 41,
+        "emoji": "🧤",
+        "badge": "POPULAR",
+        "desc": "Tăng độ bám khi tập tạ và hạn chế chai tay trong quá trình luyện tập."
     },
+
     {
-        "id": 5, "title": "Protein trong tập luyện: hiểu đơn giản để áp dụng hằng ngày",
-        "category": "Dinh dưỡng", "read": "7 phút", "date": "02/09/2026",
-        "excerpt": "Protein hỗ trợ xây dựng và sửa chữa mô; cách phân bổ trong ngày thường quan trọng hơn chạy theo một bữa duy nhất.",
-        "content": """
-### Protein làm gì?
-Protein cung cấp amino acid cho nhiều quá trình của cơ thể, trong đó có việc duy trì và xây dựng mô cơ khi kết hợp với tập luyện sức mạnh.
-
-### Nguồn thực phẩm phổ biến
-Thịt nạc, cá, trứng, sữa, sữa chua, đậu hũ, đậu và các sản phẩm từ đậu đều có thể đóng góp protein.
-
-### Cách phân bổ
-Thay vì dồn phần lớn protein vào một bữa, hãy chia tương đối đều qua các bữa chính để dễ đạt nhu cầu tổng ngày và hỗ trợ cảm giác no.
-
-### Thực tế quan trọng nhất
-Tổng chế độ ăn, năng lượng, chất lượng thực phẩm, giấc ngủ và chương trình tập đều quan trọng. Không có một thực phẩm đơn lẻ nào thay thế được toàn bộ nền tảng đó.
-""",
+        "id": 5,
+        "name": "Bộ dây kháng lực Power Band",
+        "category": "Dụng cụ tập",
+        "price": 399000,
+        "old_price": 499000,
+        "rating": 4.8,
+        "reviews": 198,
+        "stock": 35,
+        "emoji": "⭕",
+        "badge": "HOT",
+        "desc": "Bộ nhiều mức lực phù hợp tập tại nhà, gym và phục hồi chức năng."
     },
+
     {
-        "id": 6, "title": "Uống nước khi tập: cách nhận biết bạn đang uống quá ít",
-        "category": "Dinh dưỡng", "read": "5 phút", "date": "30/08/2026",
-        "excerpt": "Khát nhiều, nước tiểu sẫm màu và giảm hiệu suất có thể là tín hiệu cần chú ý đến thói quen bù nước.",
-        "content": """
-### Trước buổi tập
-Bắt đầu buổi tập trong trạng thái đủ nước sẽ dễ hơn cố bù toàn bộ trong lúc tập. Hãy duy trì uống nước đều trong ngày.
-
-### Trong buổi tập
-Với buổi tập thông thường trong điều kiện mát, nước lọc thường là lựa chọn đơn giản. Buổi kéo dài, ra mồ hôi nhiều hoặc tập ngoài trời nóng có thể cần chú ý thêm điện giải.
-
-### Sau buổi tập
-Tiếp tục uống nước theo cảm giác khát và bữa ăn bình thường. Tránh ép uống lượng quá lớn trong thời gian rất ngắn.
-
-### Một dấu hiệu thực tế
-Màu nước tiểu quá sẫm kéo dài có thể gợi ý lượng nước chưa đủ, dù đây không phải công cụ chẩn đoán y khoa.
-""",
+        "id": 6,
+        "name": "Kettlebell Power 12KG",
+        "category": "Dụng cụ tập",
+        "price": 749000,
+        "old_price": 899000,
+        "rating": 4.8,
+        "reviews": 94,
+        "stock": 14,
+        "emoji": "🏋️",
+        "badge": "PRO",
+        "desc": "Tạ kettlebell hỗ trợ squat, swing và các bài tập sức mạnh toàn thân."
     },
+
     {
-        "id": 7, "title": "Giấc ngủ và phục hồi: vì sao tập chăm vẫn cần ngủ đủ?",
-        "category": "Phục hồi", "read": "6 phút", "date": "27/08/2026",
-        "excerpt": "Phục hồi tốt giúp bạn duy trì chất lượng buổi tập và khả năng tiến bộ lâu dài.",
-        "content": """
-### Tập luyện chỉ là một nửa quá trình
-Buổi tập tạo ra kích thích; cơ thể cần thời gian và nguồn lực để thích nghi. Thiếu ngủ kéo dài thường khiến cảm giác mệt, động lực và hiệu suất tập bị ảnh hưởng.
-
-### Xây thói quen ngủ
-Giữ giờ ngủ tương đối ổn định, giảm caffeine quá muộn, hạn chế màn hình sát giờ ngủ và tạo phòng ngủ tối, mát là những bước cơ bản.
-
-### Khi nào nên giảm tải?
-Nếu nhiều buổi liên tiếp bạn thấy mức tạ quen thuộc trở nên rất nặng, nhịp tim nghỉ tăng bất thường hoặc cảm giác mệt tích lũy, một vài ngày giảm khối lượng tập có thể hợp lý.
-""",
+        "id": 7,
+        "name": "Thảm Yoga Flex Premium",
+        "category": "Yoga",
+        "price": 459000,
+        "old_price": 599000,
+        "rating": 4.9,
+        "reviews": 147,
+        "stock": 26,
+        "emoji": "🧘",
+        "badge": "NEW",
+        "desc": "Bề mặt chống trượt, độ đàn hồi cao, phù hợp yoga và mobility."
     },
+
     {
-        "id": 8, "title": "Cách chọn giày chạy bộ theo nhu cầu thay vì theo quảng cáo",
-        "category": "Chạy bộ", "read": "7 phút", "date": "24/08/2026",
-        "excerpt": "Độ vừa chân, mục đích sử dụng và cảm giác khi chạy nên được ưu tiên hơn một thông số đơn lẻ.",
-        "content": """
-### Bắt đầu từ mục đích
-Bạn chạy hằng ngày, chạy tempo, chạy trail hay dùng giày cho cả đi bộ? Mỗi nhu cầu có thể ưu tiên khác nhau về đệm, trọng lượng và độ bám.
-
-### Độ vừa chân
-Ngón chân cần khoảng trống hợp lý, gót không trượt quá nhiều và upper không ép gây tê. Nên thử giày vào thời điểm chân đã vận động trong ngày.
-
-### Đừng quá phụ thuộc một con số
-Drop, stack height hay trọng lượng đều có giá trị tham khảo nhưng không thể thay thế cảm giác vừa chân và sự phù hợp với cách bạn sử dụng.
-""",
+        "id": 8,
+        "name": "Dây nhảy Speed Rope X",
+        "category": "Dụng cụ tập",
+        "price": 229000,
+        "old_price": 299000,
+        "rating": 4.7,
+        "reviews": 88,
+        "stock": 42,
+        "emoji": "⚡",
+        "badge": "CARDIO",
+        "desc": "Dây nhảy tốc độ cao dành cho cardio, boxing và HIIT."
     },
+
     {
-        "id": 9, "title": "Găng tay gym có cần thiết không? Khi nào nên dùng?",
-        "category": "Trang bị", "read": "5 phút", "date": "21/08/2026",
-        "excerpt": "Găng tay không bắt buộc, nhưng có thể hữu ích khi bạn muốn tăng độ bám hoặc giảm ma sát lòng bàn tay.",
-        "content": """
-### Lợi ích chính
-Găng tập có thể giảm cảm giác cọ xát, hỗ trợ độ bám khi tay nhiều mồ hôi và tạo cảm giác thoải mái hơn với một số người.
-
-### Điểm cần lưu ý
-Găng quá dày có thể làm cảm giác cầm thanh tạ kém tự nhiên. Hãy chọn đúng size, vật liệu thoáng và phần đệm vừa đủ.
-
-### Không thay thế kỹ thuật
-Nếu bạn liên tục mất grip vì mức tạ vượt khả năng kiểm soát, phụ kiện không nên là cách duy nhất để khắc phục. Hãy xem lại kỹ thuật và mức tải.
-""",
+        "id": 9,
+        "name": "Bình nước Sport 1L",
+        "category": "Phụ kiện",
+        "price": 189000,
+        "old_price": 239000,
+        "rating": 4.6,
+        "reviews": 64,
+        "stock": 50,
+        "emoji": "🥤",
+        "badge": "DAILY",
+        "desc": "Bình nước dung tích lớn phù hợp gym, chạy bộ và hoạt động ngoài trời."
     },
+
     {
-        "id": 10, "title": "Dây kháng lực: 5 cách dùng hiệu quả ngoài việc khởi động",
-        "category": "Tập tại nhà", "read": "6 phút", "date": "18/08/2026",
-        "excerpt": "Dây kháng lực có thể dùng cho tập sức mạnh, hỗ trợ kỹ thuật và thêm kháng lực vào nhiều bài quen thuộc.",
-        "content": """
-### 5 ứng dụng dễ dùng
-1. Row cho lưng và tay trước.  
-2. Pallof Press để tập chống xoay thân người.  
-3. Lateral Walk cho nhóm cơ quanh hông.  
-4. Assisted Pull-up để giảm tải khi kéo xà.  
-5. Band-resisted Squat/Press để thay đổi đường kháng lực.
-
-### Ưu điểm
-Nhẹ, gọn, dễ mang theo và phù hợp cho home gym. Nhược điểm là khó định lượng lực chính xác như tạ máy hoặc tạ tự do.
-""",
+        "id": 10,
+        "name": "Foam Roller Recovery Pro",
+        "category": "Phục hồi",
+        "price": 329000,
+        "old_price": 419000,
+        "rating": 4.8,
+        "reviews": 112,
+        "stock": 31,
+        "emoji": "🌀",
+        "badge": "RECOVERY",
+        "desc": "Hỗ trợ massage cơ, mobility và phục hồi sau tập luyện."
     },
+
     {
-        "id": 11, "title": "HIIT và cardio cường độ thấp: chọn kiểu nào cho mục tiêu của bạn?",
-        "category": "Cardio", "read": "7 phút", "date": "15/08/2026",
-        "excerpt": "Không cần chọn một bỏ một; hai hình thức có thể phục vụ những mục tiêu và thời điểm khác nhau.",
-        "content": """
-### HIIT
-Các quãng cường độ cao xen kẽ nghỉ thường tiết kiệm thời gian nhưng gây mệt nhiều hơn và đòi hỏi nền tảng kỹ thuật tốt ở bài vận động được chọn.
-
-### Cardio cường độ thấp
-Đi bộ nhanh, đạp xe nhẹ hoặc chạy rất nhẹ dễ phục hồi hơn và có thể tích lũy thời lượng lớn.
-
-### Cách kết hợp
-Nếu bạn ưu tiên sức mạnh, có thể dùng cardio nhẹ thường xuyên và chỉ thêm 1–2 buổi interval ngắn tùy khả năng phục hồi. Tổng tải của cả tuần quan trọng hơn việc chạy theo một phương pháp duy nhất.
-""",
+        "id": 11,
+        "name": "Túi Gym Urban Sport",
+        "category": "Phụ kiện",
+        "price": 549000,
+        "old_price": 699000,
+        "rating": 4.7,
+        "reviews": 91,
+        "stock": 21,
+        "emoji": "🎒",
+        "badge": "URBAN",
+        "desc": "Túi gym nhiều ngăn, thiết kế hiện đại và chống nước nhẹ."
     },
+
     {
-        "id": 12, "title": "Squat cơ bản: 6 lỗi thường gặp và cách tự kiểm tra",
-        "category": "Gym & Strength", "read": "8 phút", "date": "12/08/2026",
-        "excerpt": "Tự quay video ở góc phù hợp là cách đơn giản để nhận biết một số lỗi kỹ thuật phổ biến.",
-        "content": """
-### Những điểm thường gặp
-- Gót chân nhấc khỏi sàn.
-- Gối mất kiểm soát hướng.
-- Thân người đổ quá mức so với kiểu squat đang thực hiện.
-- Mất căng thân người ở đáy động tác.
-- Xuống sâu hơn khả năng mobility đang có.
-- Tăng tạ quá sớm.
-
-### Cách kiểm tra
-Quay video từ góc chéo trước hoặc ngang, dùng mức tạ nhẹ và so sánh qua nhiều reps. Kỹ thuật có thể khác đôi chút giữa từng người do tỷ lệ cơ thể và mục tiêu tập.
-""",
-    },
-    {
-        "id": 13, "title": "Push-up từ số 0: lộ trình để tăng số lần chống đẩy",
-        "category": "Gym & Strength", "read": "6 phút", "date": "09/08/2026",
-        "excerpt": "Điều chỉnh độ cao tay chống giúp bạn luyện đúng chuyển động trước khi tiến tới chống đẩy sàn.",
-        "content": """
-### Bắt đầu ở biến thể vừa sức
-Nếu chống đẩy sàn quá khó, hãy đặt tay lên bàn hoặc ghế chắc chắn. Chọn độ cao cho phép thực hiện 6–12 reps kiểm soát.
-
-### Kỹ thuật cơ bản
-Giữ thân người tương đối thẳng, tay đặt ổn định, vai không nhô sát tai và hạ ngực có kiểm soát.
-
-### Tăng tiến
-Khi đạt 3 hiệp x 12–15 reps dễ dàng, hạ dần độ cao tay chống. Tập 2–3 lần/tuần thường đủ để luyện kỹ năng mà không cần tập tới thất bại mỗi ngày.
-""",
-    },
-    {
-        "id": 14, "title": "Deadlift an toàn hơn: cách setup trước khi kéo",
-        "category": "Gym & Strength", "read": "7 phút", "date": "06/08/2026",
-        "excerpt": "Một setup lặp lại ổn định giúp bạn kiểm soát chuyển động tốt hơn khi mức tạ tăng.",
-        "content": """
-### Trình tự setup gợi ý
-1. Đặt bàn chân ổn định và thanh tạ gần giữa bàn chân.
-2. Gập hông để nắm thanh.
-3. Tạo căng phần lưng trên và thân người.
-4. Đưa cẳng chân tiến gần thanh mà không đẩy thanh đi xa.
-5. Đạp sàn và giữ thanh đi gần cơ thể.
-
-### Không cần vội tăng tải
-Deadlift là bài có thể dùng mức tạ lớn nên sai số nhỏ khi tải cao cũng trở nên đáng kể. Hãy tăng từ từ và dừng set nếu kỹ thuật xuống rõ rệt.
-""",
-    },
-    {
-        "id": 15, "title": "Mobility và stretching khác nhau thế nào?",
-        "category": "Phục hồi", "read": "5 phút", "date": "03/08/2026",
-        "excerpt": "Mobility thường nhấn mạnh khả năng chủ động kiểm soát biên độ, trong khi stretching chỉ là một phần của câu chuyện.",
-        "content": """
-### Stretching
-Kéo giãn có thể là động hoặc tĩnh, thường tập trung vào cảm giác kéo căng của mô trong một tư thế hoặc chuyển động.
-
-### Mobility
-Mobility liên quan đến việc tạo và kiểm soát chuyển động tại khớp trong biên độ cần thiết cho hoạt động cụ thể.
-
-### Áp dụng
-Nếu squat bị hạn chế, chỉ kéo giãn chưa chắc giải quyết toàn bộ vấn đề. Bạn có thể cần bài ankle mobility, kiểm soát hông và thực hành squat ở mức tải phù hợp.
-""",
-    },
-    {
-        "id": 16, "title": "Túi tập gym nên có gì? Checklist tối giản cho người bận rộn",
-        "category": "Trang bị", "read": "4 phút", "date": "31/07/2026",
-        "excerpt": "Mang đủ đồ cần thiết nhưng không biến túi tập thành kho chứa đồ là mục tiêu thực tế nhất.",
-        "content": """
-### Bộ cơ bản
-Quần áo tập, giày, bình nước, khăn nhỏ, khóa tủ nếu phòng gym yêu cầu và đồ vệ sinh cá nhân là đủ cho đa số buổi tập.
-
-### Phụ kiện tùy mục tiêu
-Găng tay, straps, belt, dây kháng lực hoặc tai nghe chỉ nên mang khi bạn thực sự dùng chúng trong chương trình.
-
-### Tổ chức túi
-Ngăn giày và ngăn đồ ướt giúp hạn chế mùi. Sau buổi tập, lấy quần áo ẩm ra càng sớm càng tốt thay vì để qua đêm trong túi.
-""",
-    },
-    {
-        "id": 17, "title": "Cách lập kế hoạch tập một tuần để dễ duy trì hơn",
-        "category": "Nền tảng tập luyện", "read": "7 phút", "date": "28/07/2026",
-        "excerpt": "Một lịch tập tốt cần khớp với thời gian và mức phục hồi thật của bạn, không chỉ đẹp trên giấy.",
-        "content": """
-### Bước 1: chốt số buổi thực tế
-Nếu lịch làm việc chỉ cho phép 3 buổi, hãy xây lịch 3 buổi tốt thay vì cố theo lịch 6 buổi rồi bỏ dở.
-
-### Bước 2: xác định ưu tiên
-Sức mạnh, tăng cơ, chạy bộ hay sức khỏe tổng thể sẽ ảnh hưởng cách phân phối bài tập.
-
-### Bước 3: đặt ngày nghỉ chiến lược
-Tránh dồn quá nhiều buổi nặng liên tiếp nếu bạn phục hồi kém. Có thể xen kẽ ngày sức mạnh với cardio nhẹ hoặc mobility.
-
-### Bước 4: theo dõi 4–6 tuần
-Chỉ thay chương trình khi có lý do rõ ràng. Quá nhiều thay đổi làm khó đánh giá thứ gì thật sự hiệu quả.
-""",
-    },
-    {
-        "id": 18, "title": "Tập mãi không tiến bộ: 7 câu hỏi nên kiểm tra trước khi đổi giáo án",
-        "category": "Nền tảng tập luyện", "read": "7 phút", "date": "25/07/2026",
-        "excerpt": "Plateau đôi khi đến từ phục hồi, kỹ thuật hoặc việc theo dõi kém chứ không phải thiếu bài tập mới.",
-        "content": """
-### 7 câu hỏi nhanh
-1. Bạn có ghi lại mức tạ và reps không?  
-2. Kỹ thuật có ổn định khi tăng tải không?  
-3. Bạn có ngủ đủ trong phần lớn tuần không?  
-4. Tổng năng lượng và protein có phù hợp mục tiêu không?  
-5. Có tập quá nhiều set đến thất bại không?  
-6. Bạn đã duy trì chương trình đủ lâu chưa?  
-7. Có dấu hiệu đau hoặc mệt kéo dài cần giảm tải không?
-
-Trả lời các câu hỏi này trước khi thay toàn bộ giáo án giúp bạn tránh đổi chương trình chỉ vì vài buổi tập không tốt.
-""",
-    },
-    {
-        "id": 19, "title": "Cân bằng năng lượng: nền tảng để hiểu tăng cân và giảm cân",
-        "category": "Dinh dưỡng", "read": "7 phút", "date": "22/07/2026",
-        "excerpt": "Thay đổi cân nặng dài hạn liên quan đến cân bằng giữa năng lượng nạp vào và năng lượng tiêu hao.",
-        "content": """
-### Khái niệm đơn giản
-Khi năng lượng nạp vào thường xuyên thấp hơn năng lượng tiêu hao, cân nặng có xu hướng giảm theo thời gian; chiều ngược lại thường dẫn tới tăng cân.
-
-### Nhưng cơ thể không phải máy tính đơn giản
-Mức vận động, cảm giác đói, khối lượng cơ thể và nhiều yếu tố hành vi có thể thay đổi khi bạn ăn ít hoặc nhiều hơn.
-
-### Cách tiếp cận thực tế
-Theo dõi xu hướng cân nặng nhiều tuần thay vì phản ứng với từng ngày. Ưu tiên thực phẩm giàu dinh dưỡng, đủ protein, rau quả, giấc ngủ và vận động phù hợp.
-""",
-    },
-    {
-        "id": 20, "title": "Đau khi tập: khi nào nên dừng lại và tìm hỗ trợ chuyên môn?",
-        "category": "Phục hồi", "read": "6 phút", "date": "19/07/2026",
-        "excerpt": "Phân biệt cảm giác gắng sức bình thường với cơn đau bất thường là kỹ năng quan trọng để tập bền vững.",
-        "content": """
-### Đau không phải lúc nào cũng là dấu hiệu “tập hiệu quả”
-Cảm giác căng cơ hoặc mỏi sau tập có thể xảy ra, nhưng đau sắc, đau tăng dần, sưng rõ hoặc mất chức năng không nên bị xem nhẹ.
-
-### Nên dừng bài tập khi
-Cơn đau đột ngột xuất hiện, bạn mất khả năng chịu lực bình thường, có cảm giác tê/yếu bất thường hoặc chấn thương do va chạm mạnh.
-
-### Khi cần hỗ trợ
-Nếu triệu chứng kéo dài, tái phát hoặc ảnh hưởng sinh hoạt, hãy tìm chuyên gia y tế có chuyên môn phù hợp để được đánh giá trực tiếp. Nội dung trên blog chỉ mang tính giáo dục, không thay thế chẩn đoán cá nhân.
-""",
-    },
-]
-
-# =========================================================
-# HÀM TIỆN ÍCH
-# =========================================================
-def money(value: int) -> str:
-    return f"{int(value):,}".replace(",", ".") + " ₫"
-
-
-def normalize_text(text: str) -> str:
-    text = text.lower().strip()
-    text = unicodedata.normalize("NFD", text)
-    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-    return re.sub(r"\s+", " ", text)
-
-
-def hex_color(rgb):
-    return "#" + "".join(f"{c:02x}" for c in rgb)
-
-
-def load_font(size=30):
-    candidates = [
-        APP_DIR / "DejaVuSans-Bold.ttf",
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-        Path("C:/Windows/Fonts/arialbd.ttf"),
-    ]
-    for p in candidates:
-        if p.exists():
-            try:
-                return ImageFont.truetype(str(p), size=size)
-            except Exception:
-                pass
-    return ImageFont.load_default()
-
-
-def generate_product_image(product: Dict) -> Path:
-    path = ASSET_DIR / f"{product['id']}.png"
-    if path.exists():
-        return path
-
-    w, h = 1100, 760
-    bg = product["color"]
-    accent = product["accent"]
-    img = Image.new("RGB", (w, h), bg)
-    d = ImageDraw.Draw(img)
-
-    # Gradient dọc đơn giản
-    for y in range(h):
-        ratio = y / h
-        col = tuple(int(bg[i] * (1 - 0.24 * ratio) + 16 * (0.24 * ratio)) for i in range(3))
-        d.line([(0, y), (w, y)], fill=col)
-
-    # Hình khối trang trí
-    d.ellipse((720, -140, 1240, 380), fill=accent)
-    d.ellipse((-120, 540, 360, 1020), outline=accent, width=28)
-    d.rounded_rectangle((55, 55, 235, 105), radius=25, fill=(245, 247, 250))
-    d.text((86, 71), product["id"], fill=(20, 22, 27), font=load_font(25))
-
-    # Minh họa theo danh mục
-    cx, cy = 550, 360
-    icon = (245, 247, 250)
-    cat = product["category"]
-    if cat == "Quần áo":
-        # Áo thể thao cách điệu
-        pts = [(420, 230), (495, 190), (605, 190), (680, 230), (640, 315), (610, 290), (610, 535), (490, 535), (490, 290), (460, 315)]
-        d.polygon(pts, fill=icon)
-        d.ellipse((515, 185, 585, 245), fill=bg)
-        d.line((545, 260, 545, 505), fill=accent, width=16)
-    elif cat == "Giày thể thao":
-        pts = [(330, 435), (475, 430), (560, 365), (625, 395), (670, 445), (815, 470), (830, 520), (400, 520), (340, 495)]
-        d.polygon(pts, fill=icon)
-        d.line((415, 470, 735, 470), fill=accent, width=14)
-        for x in [535, 575, 615]:
-            d.line((x, 405, x+45, 435), fill=bg, width=9)
-    elif cat == "Dụng cụ tập":
-        # Dumbbell
-        d.rounded_rectangle((365, 325, 735, 390), radius=28, fill=icon)
-        d.rounded_rectangle((305, 265, 390, 455), radius=20, fill=icon)
-        d.rounded_rectangle((710, 265, 795, 455), radius=20, fill=icon)
-        d.rounded_rectangle((260, 295, 325, 425), radius=18, fill=accent)
-        d.rounded_rectangle((775, 295, 840, 425), radius=18, fill=accent)
-    elif cat == "Yoga & Mobility":
-        d.rounded_rectangle((330, 435, 780, 515), radius=38, fill=icon)
-        d.ellipse((680, 405, 805, 540), fill=accent)
-        d.arc((390, 220, 710, 500), 195, 345, fill=icon, width=35)
-    else:
-        # Găng / phụ kiện: shield + grip
-        shield = [(550, 190), (735, 255), (705, 455), (550, 560), (395, 455), (365, 255)]
-        d.polygon(shield, fill=icon)
-        d.ellipse((475, 300, 625, 450), outline=accent, width=30)
-        d.line((505, 375, 590, 375), fill=accent, width=22)
-
-    # Nhãn danh mục
-    d.rounded_rectangle((55, 625, 470, 695), radius=22, fill=(245, 247, 250))
-    label = normalize_text(cat).upper()[:25]
-    d.text((82, 644), label, fill=(20, 22, 27), font=load_font(25))
-
-    img.save(path, quality=92)
-    return path
-
-
-def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS orders (
-                order_id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                customer_name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                email TEXT,
-                address TEXT NOT NULL,
-                city TEXT NOT NULL,
-                payment_method TEXT NOT NULL,
-                subtotal INTEGER NOT NULL,
-                discount INTEGER NOT NULL,
-                shipping INTEGER NOT NULL,
-                total INTEGER NOT NULL,
-                items_json TEXT NOT NULL,
-                note TEXT
-            )
-            """
-        )
-        conn.commit()
-
-
-def save_order(order: Dict):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            INSERT INTO orders (
-                order_id, created_at, customer_name, phone, email, address, city,
-                payment_method, subtotal, discount, shipping, total, items_json, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                order["order_id"], order["created_at"], order["customer_name"], order["phone"],
-                order["email"], order["address"], order["city"], order["payment_method"],
-                order["subtotal"], order["discount"], order["shipping"], order["total"],
-                json.dumps(order["items"], ensure_ascii=False), order["note"],
-            ),
-        )
-        conn.commit()
-
-
-def load_orders(order_ids: List[str]) -> List[Dict]:
-    if not order_ids:
-        return []
-    placeholders = ",".join("?" for _ in order_ids)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            f"SELECT * FROM orders WHERE order_id IN ({placeholders}) ORDER BY created_at DESC",
-            tuple(order_ids),
-        ).fetchall()
-    result = []
-    for row in rows:
-        item = dict(row)
-        item["items"] = json.loads(item.pop("items_json"))
-        result.append(item)
-    return result
-
-
-def init_state():
-    defaults = {
-        "cart": {},
-        "wishlist": [],
-        "coupon": "",
-        "chat_history": [
-            {
-                "role": "assistant",
-                "content": "Xin chào! Mình là **SportBot**. Bạn có thể hỏi mình về sản phẩm, ngân sách, giao hàng, thanh toán, đổi trả hoặc kiến thức tập luyện.",
-            }
-        ],
-        "order_ids": [],
-        "last_order": None,
-        "shop_search": "",
+        "id": 12,
+        "name": "Đai Lưng Weightlifting Pro",
+        "category": "Phụ kiện",
+        "price": 629000,
+        "old_price": 799000,
+        "rating": 4.9,
+        "reviews": 136,
+        "stock": 19,
+        "emoji": "💪",
+        "badge": "STRENGTH",
+        "desc": "Hỗ trợ vùng core khi squat, deadlift và các bài compound nặng."
     }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+
+]
 
 
-def add_to_cart(product_id: str, qty: int = 1):
-    current = st.session_state.cart.get(product_id, 0)
-    stock = PRODUCT_INDEX[product_id]["stock"]
-    st.session_state.cart[product_id] = min(current + qty, stock)
-    st.toast("Đã thêm sản phẩm vào giỏ hàng", icon="🛒")
+# =========================================================
+# 4. BLOG
+# =========================================================
+
+BLOG_POSTS = [
+
+    ("Gym", "🏋️", "Người mới tập Gym nên bắt đầu từ đâu?",
+     "Hướng dẫn xây dựng lịch tập cơ bản và những nguyên tắc quan trọng cho người mới."),
+
+    ("Dinh dưỡng", "🥗", "Protein có vai trò gì trong phát triển cơ bắp?",
+     "Tìm hiểu protein, nhu cầu hằng ngày và cách lựa chọn nguồn protein phù hợp."),
+
+    ("Running", "🏃", "5 lỗi phổ biến của người mới chạy bộ",
+     "Những lỗi thường gặp khiến hiệu suất chạy giảm và nguy cơ chấn thương tăng."),
+
+    ("Gym", "💪", "Cách xây dựng lịch tập Gym 4 buổi mỗi tuần",
+     "Gợi ý cách phân chia nhóm cơ giúp cân bằng giữa tập luyện và phục hồi."),
+
+    ("Dinh dưỡng", "🍳", "Nên ăn gì trước khi tập?",
+     "Các nhóm thực phẩm giúp bổ sung năng lượng trước buổi tập."),
+
+    ("Phục hồi", "😴", "Giấc ngủ ảnh hưởng thế nào tới cơ bắp?",
+     "Ngủ đủ giúp cơ thể phục hồi, cân bằng hormone và nâng cao hiệu suất."),
+
+    ("Running", "👟", "Cách chọn giày chạy bộ phù hợp",
+     "Những yếu tố cần quan tâm khi lựa chọn giày chạy dành cho người mới."),
+
+    ("Gym", "🏋️", "Squat đúng kỹ thuật cho người mới",
+     "Hướng dẫn tư thế squat cơ bản và các lỗi thường gặp."),
+
+    ("Gym", "⚡", "Deadlift có thực sự nguy hiểm?",
+     "Hiểu đúng về deadlift và cách tập an toàn hơn."),
+
+    ("Cardio", "❤️", "Cardio bao nhiêu phút là đủ?",
+     "Cách lựa chọn thời lượng cardio theo từng mục tiêu tập luyện."),
+
+    ("Giảm mỡ", "🔥", "HIIT có giúp giảm mỡ nhanh hơn?",
+     "Phân tích ưu điểm và hạn chế của hình thức tập HIIT."),
+
+    ("Mobility", "🧘", "Mobility khác Stretching như thế nào?",
+     "Phân biệt hai phương pháp giúp cải thiện khả năng vận động."),
+
+    ("Dinh dưỡng", "🥛", "Có cần uống Whey Protein không?",
+     "Whey chỉ là thực phẩm bổ sung và không phải điều bắt buộc để tăng cơ."),
+
+    ("Gym", "📈", "Progressive Overload là gì?",
+     "Nguyên tắc quan trọng giúp cơ thể tiếp tục thích nghi và phát triển."),
+
+    ("Phục hồi", "🌀", "Foam Roller có tác dụng gì?",
+     "Cách sử dụng foam roller trong quá trình phục hồi sau tập."),
+
+    ("Running", "🏃", "Zone 2 Running là gì?",
+     "Phương pháp chạy ở cường độ thấp giúp phát triển nền tảng tim mạch."),
+
+    ("Dinh dưỡng", "💧", "Uống bao nhiêu nước khi tập thể thao?",
+     "Gợi ý cách bổ sung nước hợp lý trước, trong và sau buổi tập."),
+
+    ("Gym", "🧠", "Mind-Muscle Connection là gì?",
+     "Hiểu mối liên hệ giữa tập trung tinh thần và khả năng kiểm soát cơ bắp."),
+
+    ("Trang bị", "🎒", "Những món đồ nên có khi đi Gym",
+     "Danh sách những phụ kiện cơ bản giúp buổi tập thuận tiện hơn."),
+
+    ("Lifestyle", "🎯", "Làm sao duy trì thói quen tập luyện?",
+     "Các phương pháp giúp bạn duy trì động lực và xây dựng thói quen lâu dài.")
+
+]
 
 
-def cart_count() -> int:
+# =========================================================
+# 5. SESSION STATE
+# =========================================================
+
+if "cart" not in st.session_state:
+    st.session_state.cart = {}
+
+if "wishlist" not in st.session_state:
+    st.session_state.wishlist = []
+
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {
+            "role": "assistant",
+            "content": "Xin chào! Tôi là SportBot. Bạn đang tìm sản phẩm hay kiến thức tập luyện?"
+        }
+    ]
+
+if "order_success" not in st.session_state:
+    st.session_state.order_success = False
+
+
+# =========================================================
+# 6. HÀM HỖ TRỢ
+# =========================================================
+
+def money(number):
+
+    return f"{number:,.0f}đ".replace(",", ".")
+
+
+def add_to_cart(product_id):
+
+    if product_id not in st.session_state.cart:
+        st.session_state.cart[product_id] = 1
+
+    else:
+        st.session_state.cart[product_id] += 1
+
+
+def cart_count():
+
     return sum(st.session_state.cart.values())
 
 
-def cart_totals():
-    subtotal = sum(PRODUCT_INDEX[pid]["price"] * qty for pid, qty in st.session_state.cart.items())
-    coupon = st.session_state.coupon.strip().upper()
-    discount = min(int(subtotal * 0.10), 100_000) if coupon == "SPORT10" else 0
-    shipping = 0 if subtotal >= FREE_SHIP_THRESHOLD else DEFAULT_SHIPPING
-    if coupon == "FREESHIP":
-        shipping = 0
-    total = max(0, subtotal - discount + shipping)
-    return subtotal, discount, shipping, total
+def cart_total():
 
+    total = 0
 
-def parse_budget(query: str):
-    q = normalize_text(query)
-    patterns = [
-        r"(\d+(?:[\.,]\d+)?)\s*(trieu|tr)",
-        r"(\d+(?:[\.,]\d+)?)\s*k",
-        r"(\d{5,9})\s*(?:d|dong)?",
-    ]
-    for i, pat in enumerate(patterns):
-        m = re.search(pat, q)
-        if m:
-            num = float(m.group(1).replace(",", "."))
-            if i == 0:
-                return int(num * 1_000_000)
-            if i == 1:
-                return int(num * 1_000)
-            return int(num)
-    return None
+    for product in PRODUCTS:
 
+        if product["id"] in st.session_state.cart:
 
-def product_recommendations(query: str) -> List[Dict]:
-    q = normalize_text(query)
-    budget = parse_budget(query)
-    mapping = {
-        "giay": "Giày thể thao",
-        "chay": "Giày thể thao",
-        "ao": "Quần áo",
-        "quan": "Quần áo",
-        "gang": "Găng & phụ kiện",
-        "phu kien": "Găng & phụ kiện",
-        "day": "Dụng cụ tập",
-        "ta": "Dụng cụ tập",
-        "home gym": "Dụng cụ tập",
-        "yoga": "Yoga & Mobility",
-        "mobility": "Yoga & Mobility",
-    }
-    category = None
-    for key, cat in mapping.items():
-        if key in q:
-            category = cat
-            break
-
-    items = PRODUCTS
-    if category:
-        items = [p for p in items if p["category"] == category]
-    if budget:
-        items = [p for p in items if p["price"] <= budget]
-    items = sorted(items, key=lambda p: (-p["rating"], p["price"]))
-    return items[:3]
-
-
-def answer_chat(query: str) -> str:
-    q = normalize_text(query)
-    if not q:
-        return "Bạn cứ nhập câu hỏi, mình sẽ hỗ trợ nhé."
-
-    if any(x in q for x in ["xin chao", "hello", "hi ", "chao ban", "alo"]):
-        return "Chào bạn 👋 Mình có thể gợi ý sản phẩm theo **mục tiêu + ngân sách**, giải đáp chính sách mua hàng hoặc tìm bài Blog phù hợp."
-
-    if any(x in q for x in ["giao hang", "ship", "van chuyen", "phi ship"]):
-        return (
-            f"Phí giao hàng mặc định trong bản demo là **{money(DEFAULT_SHIPPING)}**. "
-            f"Đơn từ **{money(FREE_SHIP_THRESHOLD)}** được miễn phí giao hàng. Bạn cũng có thể thử mã **FREESHIP** ở giỏ hàng."
-        )
-
-    if any(x in q for x in ["thanh toan", "cod", "chuyen khoan", "the"]):
-        return (
-            "App hiện hỗ trợ 3 lựa chọn ở bước checkout: **COD**, **chuyển khoản (demo)** và **thẻ (demo)**. "
-            "Để đưa lên production, bạn nên kết nối cổng thanh toán thật như VNPay/MoMo/ZaloPay hoặc Stripe tùy thị trường."
-        )
-
-    if any(x in q for x in ["doi tra", "hoan hang", "bao hanh", "doi size"]):
-        return (
-            "Chính sách mẫu của PULSE SPORT: hỗ trợ yêu cầu đổi size/đổi sản phẩm trong **7 ngày** nếu sản phẩm còn nguyên tình trạng phù hợp. "
-            "Khi triển khai thật, bạn nên thay nội dung này bằng chính sách pháp lý và vận hành chính thức của cửa hàng."
-        )
-
-    if any(x in q for x in ["ma giam", "coupon", "khuyen mai", "giam gia"]):
-        return "Bạn có thể thử **SPORT10** (giảm 10%, tối đa 100.000 ₫) hoặc **FREESHIP** trong trang Giỏ hàng."
-
-    # Tìm trực tiếp theo tên sản phẩm
-    for p in PRODUCTS:
-        tokens = [t for t in normalize_text(p["name"]).split() if len(t) >= 4]
-        if len(tokens) >= 2 and sum(t in q for t in tokens) >= 2:
-            return (
-                f"**{p['name']}** hiện có giá **{money(p['price'])}**, đánh giá **{p['rating']}/5** từ {p['reviews']} lượt. "
-                f"{p['desc']} Kho còn **{p['stock']}** sản phẩm trong dữ liệu demo."
+            total += (
+                product["price"]
+                *
+                st.session_state.cart[product["id"]]
             )
 
-    if any(x in q for x in ["goi y", "nen mua", "tu van", "ngan sach", "tim san pham", "mua gi"]):
-        recs = product_recommendations(query)
-        if recs:
-            lines = ["Mình gợi ý các lựa chọn sau:"]
-            for p in recs:
-                lines.append(f"- **{p['name']}** — {money(p['price'])} — ⭐ {p['rating']}/5")
-            lines.append("Bạn có thể nói rõ môn tập, mức ngân sách và ưu tiên của bạn để mình lọc sát hơn.")
-            return "\n".join(lines)
-        return "Mình chưa thấy sản phẩm phù hợp đúng ngân sách đó. Bạn thử tăng ngân sách hoặc nói rõ nhóm sản phẩm nhé."
+    return total
 
-    if any(x in q for x in ["blog", "bai viet", "kien thuc", "huong dan"]):
-        scored = []
-        q_words = set(q.split())
-        for post in BLOG_POSTS:
-            hay = normalize_text(post["title"] + " " + post["category"] + " " + post["excerpt"])
-            score = sum(1 for w in q_words if len(w) > 3 and w in hay)
-            scored.append((score, post))
-        best = [p for s, p in sorted(scored, key=lambda x: -x[0]) if s > 0][:3]
-        if not best:
-            best = BLOG_POSTS[:3]
-        return "Bạn có thể xem các bài: \n" + "\n".join(f"- **{p['title']}**" for p in best)
 
-    # Các intent thể thao phổ biến
-    if "khoi dong" in q:
-        return "Bạn vào Blog và tìm bài **“Khởi động đúng cách trước khi tập: 8–10 phút có thể làm gì?”**. Bài có quy trình cardio nhẹ → mobility động → set đặc hiệu."
-    if "protein" in q:
-        return "Blog có bài **“Protein trong tập luyện: hiểu đơn giản để áp dụng hằng ngày”**. Nội dung tập trung vào vai trò, nguồn thực phẩm và cách phân bổ protein trong ngày."
-    if "squat" in q:
-        return "Bạn xem bài **“Squat cơ bản: 6 lỗi thường gặp và cách tự kiểm tra”** trong Blog. Nếu bạn đang đau khi squat, nên giảm tải và cân nhắc được đánh giá trực tiếp bởi người có chuyên môn."
+def discount_percent(product):
 
-    return (
-        "Mình chưa chắc bạn đang hỏi theo hướng nào. Bạn có thể thử: **“gợi ý giày chạy dưới 1,5 triệu”**, "
-        "**“phí ship bao nhiêu?”**, **“mã giảm giá”**, **“tìm bài blog về squat”** hoặc nhập đúng tên sản phẩm."
+    return round(
+        (
+            1
+            -
+            product["price"]
+            /
+            product["old_price"]
+        )
+        *
+        100
     )
+
 
 # =========================================================
-# COMPONENTS
+# 7. SIDEBAR
 # =========================================================
-def sidebar():
-    with st.sidebar:
-        st.markdown(
-            """
-            <div class="sidebar-brand">
-                <div class="sidebar-brand-row">
-                    <div class="sidebar-logo">PS</div>
-                    <div>
-                        <div class="sidebar-brand-name">PULSE SPORT</div>
-                        <div class="sidebar-brand-sub">SHOP • TRAIN • RECOVER</div>
-                    </div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.divider()
-        page = st.radio(
-            "Điều hướng",
-            ["Trang chủ", "Cửa hàng", "Blog thể thao", f"Giỏ hàng ({cart_count()})", "SportBot", "Đơn hàng của tôi"],
-            label_visibility="collapsed",
-        )
-        st.divider()
-        st.markdown("**Ưu đãi demo**")
-        st.code("SPORT10", language=None)
-        st.caption("Giảm 10% • tối đa 100.000 ₫")
-        st.code("FREESHIP", language=None)
-        st.caption("Miễn phí giao hàng")
-        st.divider()
-        st.caption("📞 CSKH: 1900 0000 (demo)")
-        st.caption("✉️ hello@pulsesport.local")
-    return page
 
+with st.sidebar:
 
-def render_product_card(product: Dict, key_prefix="shop"):
-    image_path = generate_product_image(product)
-    st.image(str(image_path), use_container_width=True)
-    left, right = st.columns([4, 1])
-    with left:
-        st.markdown(f"**{product['name']}**")
-    with right:
-        if st.button("♡", key=f"wish_{key_prefix}_{product['id']}", help="Thêm/bỏ yêu thích", use_container_width=True):
-            if product["id"] in st.session_state.wishlist:
-                st.session_state.wishlist.remove(product["id"])
-            else:
-                st.session_state.wishlist.append(product["id"])
-            st.rerun()
-
-    st.markdown(
-        f"<span class='sale-pill'>{product['badge']}</span> "
-        f"<span class='rating'>⭐ {product['rating']} ({product['reviews']})</span>",
-        unsafe_allow_html=True,
-    )
-    discount_pct = round((1 - product["price"] / product["old_price"]) * 100)
-    st.markdown(
-        f"<span class='price'>{money(product['price'])}</span> &nbsp; "
-        f"<span class='old-price'>{money(product['old_price'])}</span> &nbsp; "
-        f"<span class='discount-text'>-{discount_pct}%</span>",
-        unsafe_allow_html=True,
-    )
-    st.caption(product["desc"])
-    with st.expander("Thông tin sản phẩm"):
-        for item in product["specs"]:
-            st.markdown(f"- {item}")
-        st.caption(f"Tồn kho demo: {product['stock']} sản phẩm")
-    if st.button("Thêm vào giỏ", key=f"add_{key_prefix}_{product['id']}", type="primary", use_container_width=True):
-        add_to_cart(product["id"], 1)
-
-
-def render_page_header(kicker: str, title: str, description: str, icon: str):
-    st.markdown(
-        f"""
-        <div class="page-hero">
-            <div>
-                <div class="page-kicker">{kicker}</div>
-                <h1>{title}</h1>
-                <p>{description}</p>
-            </div>
-            <div class="page-icon">{icon}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_footer():
     st.markdown(
         """
-        <div class="footer">
-        <b>PULSE SPORT</b> — Demo e-commerce & sports knowledge app built with Streamlit.<br>
-        Dữ liệu giá, tồn kho, đánh giá, chính sách và thanh toán hiện là dữ liệu minh họa để phát triển sản phẩm.
+        <div class="logo-wrap">
+            <div class="logo-box">
+
+                <div class="logo-icon">
+                    ⚡
+                </div>
+
+                <div>
+
+                    <div class="logo-name">
+                        PULSE SPORT
+                    </div>
+
+                    <div class="logo-sub">
+                        PERFORMANCE STORE
+                    </div>
+
+                </div>
+
+            </div>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
+    st.markdown("---")
+
+    page = st.radio(
+        "MENU",
+        [
+            "🏠 Trang chủ",
+            "🛍️ Cửa hàng",
+            f"🛒 Giỏ hàng ({cart_count()})",
+            "❤️ Yêu thích",
+            "📚 Blog",
+            "🤖 SportBot"
+        ],
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+
+    st.caption("HỖ TRỢ KHÁCH HÀNG")
+
+    st.markdown(
+        """
+        **📞 Hotline**
+
+        0900 123 456
+
+        **✉️ Email**
+
+        hello@pulsesport.vn
+
+        **🕒 Thời gian hỗ trợ**
+
+        08:00 - 22:00
+        """
+    )
+
+
 # =========================================================
-# PAGES
+# 8. COMPONENT - TITLE
 # =========================================================
-def page_home():
+
+def section_title(kicker, title, description=""):
+
+    st.markdown(
+        f"""
+        <div class="section-wrap">
+
+            <div class="section-kicker">
+                {kicker}
+            </div>
+
+            <div class="section-title">
+                {title}
+            </div>
+
+            <div class="section-desc">
+                {description}
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# =========================================================
+# 9. COMPONENT - PRODUCT
+# =========================================================
+
+def product_card(product, prefix):
+
+    discount = discount_percent(product)
+
+    st.markdown(
+        f"""
+        <div class="product-card">
+
+            <div class="product-visual">
+
+                <div class="badge-hot">
+                    {product["badge"]}
+                </div>
+
+                <div class="badge-discount">
+                    -{discount}%
+                </div>
+
+                <div class="product-emoji">
+                    {product["emoji"]}
+                </div>
+
+            </div>
+
+            <div class="product-category">
+                {product["category"]}
+            </div>
+
+            <div class="product-name">
+                {product["name"]}
+            </div>
+
+            <div class="rating">
+                ⭐ {product["rating"]}
+                &nbsp;
+                <span style="color:#8b98a7">
+                    ({product["reviews"]} đánh giá)
+                </span>
+            </div>
+
+            <div class="product-desc">
+                {product["desc"]}
+            </div>
+
+            <div class="price-row">
+
+                <div class="price">
+                    {money(product["price"])}
+                </div>
+
+                <div class="old-price">
+                    {money(product["old_price"])}
+                </div>
+
+            </div>
+
+            <div class="mini-info">
+                Còn {product["stock"]} sản phẩm
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    c1, c2 = st.columns([4, 1])
+
+    with c1:
+
+        if st.button(
+            "🛒 Thêm vào giỏ",
+            key=f"cart_{prefix}_{product['id']}",
+            use_container_width=True
+        ):
+
+            add_to_cart(product["id"])
+
+            st.toast(
+                f"Đã thêm {product['name']} vào giỏ hàng"
+            )
+
+    with c2:
+
+        heart = (
+            "❤️"
+            if product["id"] in st.session_state.wishlist
+            else "♡"
+        )
+
+        if st.button(
+            heart,
+            key=f"wish_{prefix}_{product['id']}",
+            use_container_width=True
+        ):
+
+            if product["id"] in st.session_state.wishlist:
+
+                st.session_state.wishlist.remove(
+                    product["id"]
+                )
+
+            else:
+
+                st.session_state.wishlist.append(
+                    product["id"]
+                )
+
+            st.rerun()
+
+
+# =========================================================
+# 10. TRANG CHỦ
+# =========================================================
+
+def home_page():
+
     st.markdown(
         """
         <div class="hero">
-            <div class="hero-badge">MOVE BETTER • TRAIN SMARTER</div>
-            <h1>Trang bị tốt hơn.<br>Tập luyện thông minh hơn.</h1>
-            <p>PULSE SPORT kết hợp cửa hàng đồ thể thao, kiến thức tập luyện và trợ lý tư vấn tự động trong cùng một ứng dụng.</p>
+
+            <div class="hero-badge">
+                PERFORMANCE • TRAINING • LIFESTYLE
+            </div>
+
+            <h1>
+                Train Strong.<br>
+                Live Better.
+            </h1>
+
+            <p>
+                PULSE SPORT mang đến trang phục,
+                phụ kiện và dụng cụ tập luyện hiện đại
+                dành cho người yêu thể thao.
+            </p>
+
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Sản phẩm", len(PRODUCTS), "6 nhóm")
-    c2.metric("Bài kiến thức", len(BLOG_POSTS), "Có sẵn")
-    c3.metric("Miễn phí ship từ", "700K")
-    c4.metric("Đánh giá TB", f"{sum(p['rating'] for p in PRODUCTS)/len(PRODUCTS):.1f}/5")
+    stat1, stat2, stat3, stat4 = st.columns(4)
 
-    st.markdown("### Danh mục nổi bật", help="Các nhóm sản phẩm chính trong dữ liệu demo")
-    cats = [
-        ("👕", "Quần áo", "Dry-fit, short 2-in-1 và trang phục vận động"),
-        ("👟", "Giày thể thao", "Giày chạy hằng ngày và tập luyện"),
-        ("🏋️", "Dụng cụ tập", "Dây kháng lực, kettlebell, dây nhảy"),
-        ("🧘", "Yoga & Mobility", "Thảm tập và dụng cụ phục hồi"),
+    stats = [
+
+        (
+            stat1,
+            "🛍️",
+            "120+",
+            "Sản phẩm thể thao"
+        ),
+
+        (
+            stat2,
+            "⭐",
+            "4.8/5",
+            "Đánh giá khách hàng"
+        ),
+
+        (
+            stat3,
+            "🚚",
+            "700K",
+            "Miễn phí vận chuyển"
+        ),
+
+        (
+            stat4,
+            "📚",
+            "20",
+            "Bài viết kiến thức"
+        )
+
     ]
+
+    for column, icon, number, label in stats:
+
+        with column:
+
+            st.markdown(
+                f"""
+                <div class="stat-card">
+
+                    <div class="stat-icon">
+                        {icon}
+                    </div>
+
+                    <div class="stat-number">
+                        {number}
+                    </div>
+
+                    <div class="stat-label">
+                        {label}
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    section_title(
+        "SHOP BY CATEGORY",
+        "Khám phá theo nhu cầu",
+        "Các nhóm sản phẩm dành cho nhiều hình thức tập luyện khác nhau."
+    )
+
+    categories = [
+
+        (
+            "👕",
+            "Training Wear",
+            "Trang phục tập luyện thoáng khí và linh hoạt."
+        ),
+
+        (
+            "👟",
+            "Running",
+            "Giày và phụ kiện dành cho chạy bộ."
+        ),
+
+        (
+            "🏋️",
+            "Strength",
+            "Dụng cụ hỗ trợ tập luyện sức mạnh."
+        ),
+
+        (
+            "🧘",
+            "Recovery",
+            "Yoga, mobility và phục hồi cơ thể."
+        )
+
+    ]
+
     cols = st.columns(4)
-    for col, (icon, title, text) in zip(cols, cats):
-        with col:
-            st.markdown(f"<div class='feature'><h3>{icon} {title}</h3><p class='muted'>{text}</p></div>", unsafe_allow_html=True)
 
-    st.markdown("### Sản phẩm được quan tâm")
-    featured = sorted(PRODUCTS, key=lambda p: (-p["rating"], -p["reviews"]))[:3]
+    for col, item in zip(cols, categories):
+
+        icon, title, desc = item
+
+        with col:
+
+            st.markdown(
+                f"""
+                <div class="category-card">
+
+                    <div class="category-icon">
+                        {icon}
+                    </div>
+
+                    <div class="category-title">
+                        {title}
+                    </div>
+
+                    <div class="category-desc">
+                        {desc}
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    section_title(
+        "TRENDING NOW",
+        "Sản phẩm nổi bật",
+        "Những sản phẩm được khách hàng quan tâm nhiều."
+    )
+
+    featured = PRODUCTS[:4]
+
+    cols = st.columns(4)
+
+    for col, product in zip(cols, featured):
+
+        with col:
+
+            product_card(
+                product,
+                "home"
+            )
+
+    section_title(
+        "SPORT KNOWLEDGE",
+        "Kiến thức dành cho bạn",
+        "Không chỉ bán sản phẩm, PULSE SPORT còn giúp bạn tập luyện thông minh hơn."
+    )
+
     cols = st.columns(3)
-    for col, p in zip(cols, featured):
-        with col:
-            with st.container(border=True):
-                render_product_card(p, key_prefix="home")
 
-    st.markdown("### Vì sao app này thực tế hơn một landing page bán hàng?")
-    f1, f2, f3 = st.columns(3)
-    with f1:
-        st.markdown("<div class='feature'><h3>🛒 Luồng mua hàng</h3><p class='muted'>Tìm kiếm → chọn sản phẩm → giỏ hàng → mã giảm giá → checkout → lưu đơn SQLite.</p></div>", unsafe_allow_html=True)
-    with f2:
-        st.markdown("<div class='feature'><h3>📚 Content Hub</h3><p class='muted'>20 bài viết nền tảng về gym, chạy bộ, dinh dưỡng, phục hồi và trang bị.</p></div>", unsafe_allow_html=True)
-    with f3:
-        st.markdown("<div class='feature'><h3>🤖 SportBot</h3><p class='muted'>Chat tự động offline, tư vấn theo từ khóa, sản phẩm và ngân sách mà không cần API.</p></div>", unsafe_allow_html=True)
+    for index, post in enumerate(BLOG_POSTS[:3]):
+
+        tag, icon, title, desc = post
+
+        with cols[index]:
+
+            st.markdown(
+                f"""
+                <div class="blog-card">
+
+                    <div class="blog-icon">
+                        {icon}
+                    </div>
+
+                    <div class="blog-tag">
+                        {tag}
+                    </div>
+
+                    <div class="blog-title">
+                        {title}
+                    </div>
+
+                    <div class="blog-desc">
+                        {desc}
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 
-def page_shop():
-    render_page_header(
+# =========================================================
+# 11. CỬA HÀNG
+# =========================================================
+
+def shop_page():
+
+    section_title(
         "PULSE PERFORMANCE STORE",
         "Cửa hàng thể thao",
-        "Tìm sản phẩm theo nhu cầu, ngân sách, mức đánh giá và danh mục.",
-        "⚡",
+        "Tìm kiếm sản phẩm phù hợp với nhu cầu tập luyện của bạn."
     )
 
-    search = st.text_input("Tìm kiếm", value=st.session_state.shop_search, placeholder="Ví dụ: giày chạy, găng tay, dây kháng lực...")
-    st.session_state.shop_search = search
-
-    categories = sorted(set(p["category"] for p in PRODUCTS))
-    f1, f2, f3 = st.columns([1.5, 1.2, 1])
-    with f1:
-        selected_categories = st.multiselect("Danh mục", categories, default=[])
-    with f2:
-        max_price = max(p["price"] for p in PRODUCTS)
-        price_range = st.slider("Khoảng giá", 0, max_price, (0, max_price), step=50_000, format="%d ₫")
-    with f3:
-        min_rating = st.selectbox("Đánh giá từ", [0, 4.5, 4.7, 4.8, 4.9], index=0)
-
-    sort = st.selectbox("Sắp xếp", ["Nổi bật", "Giá tăng dần", "Giá giảm dần", "Đánh giá cao"])
-
-    q = normalize_text(search)
-    filtered = []
-    for p in PRODUCTS:
-        searchable = normalize_text(p["name"] + " " + p["category"] + " " + p["desc"] + " " + " ".join(p["specs"]))
-        if q and q not in searchable:
-            continue
-        if selected_categories and p["category"] not in selected_categories:
-            continue
-        if not (price_range[0] <= p["price"] <= price_range[1]):
-            continue
-        if p["rating"] < min_rating:
-            continue
-        filtered.append(p)
-
-    if sort == "Giá tăng dần":
-        filtered.sort(key=lambda p: p["price"])
-    elif sort == "Giá giảm dần":
-        filtered.sort(key=lambda p: -p["price"])
-    elif sort == "Đánh giá cao":
-        filtered.sort(key=lambda p: (-p["rating"], -p["reviews"]))
-    else:
-        filtered.sort(key=lambda p: (-p["reviews"], -p["rating"]))
-
-    st.markdown(f"<div class='shop-count'>{len(filtered)} sản phẩm phù hợp</div>", unsafe_allow_html=True)
-    if not filtered:
-        st.info("Không tìm thấy sản phẩm phù hợp bộ lọc hiện tại.")
-        return
-
-    for i in range(0, len(filtered), 3):
-        cols = st.columns(3)
-        for col, p in zip(cols, filtered[i:i+3]):
-            with col:
-                with st.container(border=True):
-                    render_product_card(p, key_prefix=f"shop{i}")
-
-
-def page_cart():
-    render_page_header(
-        "CHECKOUT",
-        "Giỏ hàng & Thanh toán",
-        "Kiểm tra sản phẩm, áp dụng ưu đãi và hoàn tất thông tin giao hàng.",
-        "🛒",
+    filter1, filter2, filter3 = st.columns(
+        [2.2, 1.3, 1.3]
     )
 
-    if st.session_state.last_order:
-        order = st.session_state.last_order
-        st.success(f"🎉 Bạn đã đặt hàng thành công! Mã đơn: {order['order_id']}")
-        st.markdown(
-            f"<div class='notice'>Tổng thanh toán: <b>{money(order['total'])}</b> • Phương thức: <b>{order['payment_method']}</b></div>",
-            unsafe_allow_html=True,
+    with filter1:
+
+        keyword = st.text_input(
+            "Tìm kiếm",
+            placeholder="Tìm áo, giày, phụ kiện..."
         )
-        if st.button("Ẩn thông báo đơn vừa đặt"):
-            st.session_state.last_order = None
-            st.rerun()
+
+    categories = [
+        "Tất cả"
+    ] + sorted(
+        list(
+            set(
+                product["category"]
+                for product in PRODUCTS
+            )
+        )
+    )
+
+    with filter2:
+
+        selected_category = st.selectbox(
+            "Danh mục",
+            categories
+        )
+
+    with filter3:
+
+        sort = st.selectbox(
+            "Sắp xếp",
+            [
+                "Phổ biến",
+                "Giá thấp → cao",
+                "Giá cao → thấp",
+                "Đánh giá cao"
+            ]
+        )
+
+    max_price = st.slider(
+        "Khoảng giá tối đa",
+        200000,
+        2000000,
+        2000000,
+        50000
+    )
+
+    filtered = PRODUCTS.copy()
+
+    if keyword:
+
+        filtered = [
+
+            product
+
+            for product in filtered
+
+            if keyword.lower()
+            in product["name"].lower()
+
+        ]
+
+    if selected_category != "Tất cả":
+
+        filtered = [
+
+            product
+
+            for product in filtered
+
+            if product["category"]
+            ==
+            selected_category
+
+        ]
+
+    filtered = [
+
+        product
+
+        for product in filtered
+
+        if product["price"]
+        <=
+        max_price
+
+    ]
+
+    if sort == "Giá thấp → cao":
+
+        filtered.sort(
+            key=lambda x: x["price"]
+        )
+
+    elif sort == "Giá cao → thấp":
+
+        filtered.sort(
+            key=lambda x: x["price"],
+            reverse=True
+        )
+
+    elif sort == "Đánh giá cao":
+
+        filtered.sort(
+            key=lambda x: x["rating"],
+            reverse=True
+        )
+
+    st.caption(
+        f"Tìm thấy {len(filtered)} sản phẩm"
+    )
+
+    for start in range(
+        0,
+        len(filtered),
+        4
+    ):
+
+        rows = st.columns(4)
+
+        chunk = filtered[
+            start:
+            start + 4
+        ]
+
+        for col, product in zip(
+            rows,
+            chunk
+        ):
+
+            with col:
+
+                product_card(
+                    product,
+                    "shop"
+                )
+
+
+# =========================================================
+# 12. GIỎ HÀNG
+# =========================================================
+
+def cart_page():
+
+    section_title(
+        "SHOPPING CART",
+        "Giỏ hàng của bạn",
+        "Kiểm tra sản phẩm trước khi tiến hành thanh toán."
+    )
 
     if not st.session_state.cart:
-        st.info("Giỏ hàng đang trống. Hãy vào **Cửa hàng** để thêm sản phẩm.")
+
+        st.info(
+            "Giỏ hàng hiện chưa có sản phẩm."
+        )
+
         return
 
-    left, right = st.columns([1.55, 1])
+    left, right = st.columns(
+        [1.7, 1]
+    )
+
     with left:
-        st.subheader("Sản phẩm trong giỏ")
-        remove_ids = []
-        for pid, qty in list(st.session_state.cart.items()):
-            p = PRODUCT_INDEX[pid]
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([1.1, 2.2, 1])
+
+        for product in PRODUCTS:
+
+            if product["id"] not in st.session_state.cart:
+
+                continue
+
+            qty = st.session_state.cart[
+                product["id"]
+            ]
+
+            with st.container(
+                border=True
+            ):
+
+                c1, c2, c3 = st.columns(
+                    [0.8, 2.5, 1.1]
+                )
+
                 with c1:
-                    st.image(str(generate_product_image(p)), use_container_width=True)
-                with c2:
-                    st.markdown(f"**{p['name']}**")
-                    st.caption(p["category"])
-                    st.markdown(f"**{money(p['price'])}** / sản phẩm")
-                with c3:
-                    new_qty = st.number_input(
-                        "Số lượng", min_value=1, max_value=p["stock"], value=qty, step=1,
-                        key=f"qty_{pid}",
+
+                    st.markdown(
+                        f"""
+                        <div style="
+                            height:110px;
+                            border-radius:18px;
+                            display:flex;
+                            justify-content:center;
+                            align-items:center;
+                            font-size:48px;
+                            background:
+                            linear-gradient(
+                                145deg,
+                                #09182b,
+                                #174b7a
+                            );
+                        ">
+                            {product["emoji"]}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
                     )
-                    if new_qty != qty:
-                        st.session_state.cart[pid] = int(new_qty)
-                    if st.button("Xóa", key=f"remove_{pid}", use_container_width=True):
-                        remove_ids.append(pid)
-        for pid in remove_ids:
-            st.session_state.cart.pop(pid, None)
-            st.rerun()
 
-        st.subheader("Mã ưu đãi")
-        coupon = st.text_input("Coupon", value=st.session_state.coupon, placeholder="SPORT10 hoặc FREESHIP")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Áp dụng mã", use_container_width=True):
-                code = coupon.strip().upper()
-                if code in ["SPORT10", "FREESHIP"]:
-                    st.session_state.coupon = code
-                    st.success(f"Đã áp dụng mã {code}")
-                    st.rerun()
-                else:
-                    st.warning("Mã không hợp lệ trong bản demo.")
-        with c2:
-            if st.button("Bỏ mã", use_container_width=True):
-                st.session_state.coupon = ""
-                st.rerun()
+                with c2:
 
-        if st.session_state.coupon:
-            st.caption(f"Mã đang dùng: {st.session_state.coupon}")
+                    st.markdown(
+                        f"### {product['name']}"
+                    )
+
+                    st.caption(
+                        product["category"]
+                    )
+
+                    st.markdown(
+                        f"**{money(product['price'])}**"
+                    )
+
+                with c3:
+
+                    new_qty = st.number_input(
+                        "Số lượng",
+                        min_value=1,
+                        max_value=10,
+                        value=qty,
+                        key=f"qty_{product['id']}"
+                    )
+
+                    st.session_state.cart[
+                        product["id"]
+                    ] = new_qty
+
+                    if st.button(
+                        "Xóa",
+                        key=f"delete_{product['id']}",
+                        use_container_width=True
+                    ):
+
+                        del st.session_state.cart[
+                            product["id"]
+                        ]
+
+                        st.rerun()
+
+    subtotal = cart_total()
+
+    shipping = (
+        0
+        if subtotal >= 700000
+        else 30000
+    )
+
+    total = (
+        subtotal
+        +
+        shipping
+    )
 
     with right:
-        subtotal, discount, shipping, total = cart_totals()
-        with st.container(border=True):
-            st.subheader("Tóm tắt đơn hàng")
-            st.write(f"Tạm tính: **{money(subtotal)}**")
-            st.write(f"Giảm giá: **-{money(discount)}**")
-            st.write(f"Phí giao hàng: **{money(shipping)}**")
-            st.divider()
-            st.markdown(f"### Tổng cộng: {money(total)}")
-            if subtotal < FREE_SHIP_THRESHOLD and shipping > 0:
-                st.caption(f"Mua thêm {money(FREE_SHIP_THRESHOLD - subtotal)} để đạt ngưỡng freeship.")
 
-        st.subheader("Thông tin nhận hàng")
-        with st.form("checkout_form", clear_on_submit=False):
-            name = st.text_input("Họ và tên *", placeholder="Nguyễn Văn A")
-            phone = st.text_input("Số điện thoại *", placeholder="09xxxxxxxx")
-            email = st.text_input("Email", placeholder="ban@example.com")
-            city = st.selectbox(
-                "Tỉnh/Thành phố *",
-                ["TP. Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng", "Bình Dương", "Đồng Nai", "Khác"],
-            )
-            address = st.text_area("Địa chỉ nhận hàng *", placeholder="Số nhà, đường, phường/xã, quận/huyện")
-            payment = st.radio("Phương thức thanh toán", ["COD", "Chuyển khoản (demo)", "Thẻ (demo)"])
-            note = st.text_area("Ghi chú cho đơn hàng", placeholder="Ví dụ: giao giờ hành chính")
-            agree = st.checkbox("Tôi xác nhận thông tin đặt hàng là chính xác.")
-            submitted = st.form_submit_button("Đặt hàng", type="primary", use_container_width=True)
+        st.markdown(
+            f"""
+            <div class="checkout-summary">
 
-        if submitted:
-            clean_phone = re.sub(r"\D", "", phone)
-            errors = []
-            if len(name.strip()) < 2:
-                errors.append("Vui lòng nhập họ tên hợp lệ.")
-            if not (9 <= len(clean_phone) <= 11):
-                errors.append("Số điện thoại cần có khoảng 9–11 chữ số.")
-            if email.strip() and ("@" not in email or "." not in email.split("@")[-1]):
-                errors.append("Email chưa đúng định dạng.")
-            if len(address.strip()) < 8:
-                errors.append("Vui lòng nhập địa chỉ nhận hàng đầy đủ hơn.")
-            if not agree:
-                errors.append("Bạn cần xác nhận thông tin đặt hàng.")
+                <h3>
+                    Tóm tắt đơn hàng
+                </h3>
 
-            if errors:
-                for e in errors:
-                    st.error(e)
+                <div class="checkout-line">
+
+                    <span>Tạm tính</span>
+
+                    <span>
+                        {money(subtotal)}
+                    </span>
+
+                </div>
+
+                <div class="checkout-line">
+
+                    <span>Vận chuyển</span>
+
+                    <span>
+                        {
+                            "Miễn phí"
+                            if shipping == 0
+                            else money(shipping)
+                        }
+                    </span>
+
+                </div>
+
+                <div class="checkout-total">
+
+                    <span>Tổng cộng</span>
+
+                    <span>
+                        {money(total)}
+                    </span>
+
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown("### Thông tin nhận hàng")
+
+        customer_name = st.text_input(
+            "Họ và tên"
+        )
+
+        phone = st.text_input(
+            "Số điện thoại"
+        )
+
+        email = st.text_input(
+            "Email"
+        )
+
+        city = st.selectbox(
+            "Tỉnh / Thành phố",
+            [
+                "TP. Hồ Chí Minh",
+                "Hà Nội",
+                "Đà Nẵng",
+                "Cần Thơ",
+                "Bình Dương",
+                "Đồng Nai",
+                "Khác"
+            ]
+        )
+
+        address = st.text_area(
+            "Địa chỉ nhận hàng"
+        )
+
+        payment = st.radio(
+            "Phương thức thanh toán",
+            [
+                "Thanh toán khi nhận hàng",
+                "Chuyển khoản ngân hàng",
+                "Thẻ ngân hàng"
+            ]
+        )
+
+        if st.button(
+            "ĐẶT HÀNG NGAY",
+            use_container_width=True
+        ):
+
+            if (
+                not customer_name
+                or
+                not phone
+                or
+                not address
+            ):
+
+                st.warning(
+                    "Vui lòng nhập đầy đủ họ tên, số điện thoại và địa chỉ."
+                )
+
             else:
-                items = []
-                for pid, qty in st.session_state.cart.items():
-                    p = PRODUCT_INDEX[pid]
-                    items.append({
-                        "product_id": pid, "name": p["name"], "qty": qty,
-                        "unit_price": p["price"], "line_total": p["price"] * qty,
-                    })
-                order = {
-                    "order_id": "PS-" + datetime.now().strftime("%y%m%d") + "-" + uuid.uuid4().hex[:6].upper(),
-                    "created_at": datetime.now().isoformat(timespec="seconds"),
-                    "customer_name": name.strip(), "phone": clean_phone, "email": email.strip(),
-                    "address": address.strip(), "city": city, "payment_method": payment,
-                    "subtotal": subtotal, "discount": discount, "shipping": shipping, "total": total,
-                    "items": items, "note": note.strip(),
-                }
-                save_order(order)
-                st.session_state.order_ids.append(order["order_id"])
-                st.session_state.last_order = order
+
+                st.session_state.order_success = True
+
+                order_code = (
+                    "PS"
+                    +
+                    datetime.now().strftime(
+                        "%d%m%H%M"
+                    )
+                    +
+                    str(
+                        random.randint(
+                            10,
+                            99
+                        )
+                    )
+                )
+
+                st.session_state.last_order = (
+                    order_code
+                )
+
                 st.session_state.cart = {}
-                st.session_state.coupon = ""
+
                 st.rerun()
 
-        if payment if 'payment' in locals() else False:
-            pass
-        st.caption("🔒 Thanh toán trong bản demo chỉ mô phỏng luồng checkout, chưa trừ tiền thật.")
+    if st.session_state.order_success:
+
+        st.markdown(
+            f"""
+            <div class="success-box">
+
+                <div style="
+                    font-size:45px;
+                    margin-bottom:8px;
+                ">
+                    ✅
+                </div>
+
+                <h2>
+                    Bạn đã đặt hàng thành công!
+                </h2>
+
+                <p>
+                    Mã đơn hàng:
+                    <strong>
+                        {st.session_state.get(
+                            "last_order",
+                            ""
+                        )}
+                    </strong>
+                </p>
+
+                <p>
+                    PULSE SPORT sẽ liên hệ xác nhận
+                    đơn hàng trong thời gian sớm nhất.
+                </p>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
-def page_blog():
-    render_page_header(
-        "PULSE KNOWLEDGE HUB",
-        "Blog kiến thức thể thao",
-        "20 bài viết nền tảng về tập luyện, dinh dưỡng, phục hồi và trang bị.",
-        "📚",
+# =========================================================
+# 13. WISHLIST
+# =========================================================
+
+def wishlist_page():
+
+    section_title(
+        "YOUR FAVORITES",
+        "Sản phẩm yêu thích",
+        "Danh sách sản phẩm bạn đã lưu."
     )
 
-    search = st.text_input("Tìm bài viết", placeholder="Ví dụ: squat, chạy bộ, protein, phục hồi...")
-    categories = ["Tất cả"] + sorted(set(p["category"] for p in BLOG_POSTS))
-    category = st.selectbox("Chủ đề", categories)
+    products = [
 
-    q = normalize_text(search)
-    posts = []
-    for p in BLOG_POSTS:
-        hay = normalize_text(p["title"] + " " + p["excerpt"] + " " + p["content"])
-        if q and q not in hay:
-            continue
-        if category != "Tất cả" and p["category"] != category:
-            continue
-        posts.append(p)
+        product
 
-    st.markdown(f"**{len(posts)} bài viết**")
-    for p in posts:
-        with st.container(border=True):
-            st.markdown(f"### {p['title']}")
-            st.markdown(
-                f"<div class='blog-meta'>{p['category']} • {p['read']} • {p['date']}</div>",
-                unsafe_allow_html=True,
-            )
-            st.write(p["excerpt"])
-            with st.expander("Đọc bài đầy đủ"):
-                st.markdown(p["content"])
-                st.info("Nội dung mang tính giáo dục chung; các vấn đề sức khỏe/chấn thương cần được đánh giá cá nhân bởi chuyên gia phù hợp.")
+        for product in PRODUCTS
 
+        if product["id"]
+        in st.session_state.wishlist
 
-def page_chat():
-    render_page_header(
-        "SMART SPORT ASSISTANT",
-        "SportBot — Trợ lý mua sắm & kiến thức",
-        "Tư vấn sản phẩm, ngân sách, giao hàng và nội dung thể thao ngay trong app.",
-        "🤖",
-    )
-
-    quick_cols = st.columns(4)
-    quick_prompts = [
-        "Gợi ý giày chạy dưới 1,5 triệu",
-        "Phí ship bao nhiêu?",
-        "Mã giảm giá nào đang có?",
-        "Tìm bài blog về squat",
     ]
-    selected_quick = None
-    for col, prompt in zip(quick_cols, quick_prompts):
-        with col:
-            if st.button(prompt, use_container_width=True, key=f"quick_{normalize_text(prompt)}"):
-                selected_quick = prompt
 
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    if not products:
 
-    user_input = st.chat_input("Hỏi SportBot...")
-    prompt = selected_quick or user_input
-    if prompt:
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        response = answer_chat(prompt)
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-        st.rerun()
+        st.info(
+            "Bạn chưa lưu sản phẩm nào."
+        )
 
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        if st.button("Xóa hội thoại"):
-            st.session_state.chat_history = [
-                {"role": "assistant", "content": "Xin chào! Mình là **SportBot**. Bạn cần mình tư vấn sản phẩm hay kiến thức tập luyện?"}
-            ]
-            st.rerun()
-
-
-def page_orders():
-    render_page_header(
-        "ORDER CENTER",
-        "Đơn hàng của tôi",
-        "Theo dõi các đơn đã tạo trong phiên sử dụng hiện tại.",
-        "📦",
-    )
-    orders = load_orders(st.session_state.order_ids)
-    if not orders:
-        st.info("Bạn chưa tạo đơn hàng nào trong phiên này.")
         return
 
-    for order in orders:
-        with st.expander(f"{order['order_id']} • {money(order['total'])} • {order['created_at'].replace('T', ' ')}", expanded=True):
-            st.write(f"**Người nhận:** {order['customer_name']} — {order['phone']}")
-            st.write(f"**Địa chỉ:** {order['address']}, {order['city']}")
-            st.write(f"**Thanh toán:** {order['payment_method']}")
-            for item in order["items"]:
-                st.write(f"- {item['name']} × {item['qty']} — {money(item['line_total'])}")
-            st.divider()
-            st.write(f"Tạm tính: {money(order['subtotal'])}")
-            st.write(f"Giảm giá: -{money(order['discount'])}")
-            st.write(f"Phí giao hàng: {money(order['shipping'])}")
-            st.markdown(f"**Tổng: {money(order['total'])}**")
+    for start in range(
+        0,
+        len(products),
+        4
+    ):
+
+        cols = st.columns(4)
+
+        for col, product in zip(
+            cols,
+            products[start:start + 4]
+        ):
+
+            with col:
+
+                product_card(
+                    product,
+                    "wishlist"
+                )
+
 
 # =========================================================
-# MAIN
+# 14. BLOG
 # =========================================================
-init_db()
-init_state()
 
-# Tạo sẵn toàn bộ ảnh minh họa ở lần chạy đầu
-for _product in PRODUCTS:
-    generate_product_image(_product)
+def blog_page():
 
-page = sidebar()
+    section_title(
+        "PULSE KNOWLEDGE",
+        "Kiến thức thể thao",
+        "Tổng hợp kiến thức về tập luyện, dinh dưỡng, chạy bộ và phục hồi."
+    )
 
-if page == "Trang chủ":
-    page_home()
-elif page == "Cửa hàng":
-    page_shop()
-elif page == "Blog thể thao":
-    page_blog()
-elif page.startswith("Giỏ hàng"):
-    page_cart()
-elif page == "SportBot":
-    page_chat()
-elif page == "Đơn hàng của tôi":
-    page_orders()
+    search = st.text_input(
+        "Tìm bài viết",
+        placeholder="Ví dụ: Gym, Protein, Running..."
+    )
 
-render_footer()
+    tags = sorted(
+        list(
+            set(
+                post[0]
+                for post in BLOG_POSTS
+            )
+        )
+    )
+
+    selected_tag = st.selectbox(
+        "Chủ đề",
+        ["Tất cả"] + tags
+    )
+
+    filtered_posts = []
+
+    for post in BLOG_POSTS:
+
+        tag, icon, title, desc = post
+
+        if (
+            selected_tag != "Tất cả"
+            and
+            tag != selected_tag
+        ):
+
+            continue
+
+        if search:
+
+            text = (
+                title
+                +
+                " "
+                +
+                desc
+                +
+                " "
+                +
+                tag
+            ).lower()
+
+            if search.lower() not in text:
+
+                continue
+
+        filtered_posts.append(post)
+
+    for start in range(
+        0,
+        len(filtered_posts),
+        3
+    ):
+
+        cols = st.columns(3)
+
+        for col, post in zip(
+            cols,
+            filtered_posts[start:start + 3]
+        ):
+
+            tag, icon, title, desc = post
+
+            with col:
+
+                st.markdown(
+                    f"""
+                    <div class="blog-card">
+
+                        <div class="blog-icon">
+                            {icon}
+                        </div>
+
+                        <div class="blog-tag">
+                            {tag}
+                        </div>
+
+                        <div class="blog-title">
+                            {title}
+                        </div>
+
+                        <div class="blog-desc">
+                            {desc}
+                        </div>
+
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                if st.button(
+                    "Đọc bài viết →",
+                    key=f"blog_{title}",
+                    use_container_width=True
+                ):
+
+                    st.info(
+                        "Phần nội dung chi tiết bài viết có thể phát triển ở bước tiếp theo."
+                    )
+
+
+# =========================================================
+# 15. CHATBOT
+# =========================================================
+
+def bot_reply(text):
+
+    text = text.lower()
+
+    if (
+        "giày"
+        in text
+    ):
+
+        return (
+            "Nếu bạn đang tìm giày chạy, "
+            "Pulse Runner X1 là sản phẩm nổi bật "
+            "với mức giá 1.390.000đ và đánh giá 4.9/5."
+        )
+
+    if (
+        "găng"
+        in text
+    ):
+
+        return (
+            "Găng tay Gym Grip Pro phù hợp "
+            "cho tập tạ và giúp tăng độ bám khi luyện tập."
+        )
+
+    if (
+        "700"
+        in text
+        or
+        "ship"
+        in text
+        or
+        "vận chuyển"
+        in text
+    ):
+
+        return (
+            "PULSE SPORT miễn phí vận chuyển "
+            "cho đơn hàng từ 700.000đ."
+        )
+
+    if (
+        "protein"
+        in text
+        or
+        "dinh dưỡng"
+        in text
+    ):
+
+        return (
+            "Trong khu Blog hiện có nhiều bài về "
+            "Protein, Whey Protein, dinh dưỡng trước tập "
+            "và bổ sung nước."
+        )
+
+    if (
+        "gym"
+        in text
+    ):
+
+        return (
+            "Nếu bạn mới tập Gym, hãy ưu tiên kỹ thuật, "
+            "lịch tập đơn giản và tăng mức độ tập luyện từ từ."
+        )
+
+    if (
+        "thanh toán"
+        in text
+    ):
+
+        return (
+            "App hỗ trợ mô phỏng thanh toán khi nhận hàng, "
+            "chuyển khoản và thẻ ngân hàng."
+        )
+
+    return (
+        "Bạn có thể hỏi mình về sản phẩm, "
+        "giày chạy, dụng cụ Gym, phí vận chuyển, "
+        "thanh toán hoặc kiến thức thể thao."
+    )
+
+
+def chatbot_page():
+
+    section_title(
+        "PULSE AI ASSISTANT",
+        "SportBot",
+        "Trợ lý hỗ trợ khách hàng và tư vấn sản phẩm."
+    )
+
+    st.markdown(
+        """
+        <div class="bot-header">
+
+            <h2 style="
+                margin:0 0 5px 0;
+                color:white;
+            ">
+                🤖 SportBot
+            </h2>
+
+            <div style="
+                color:#bcd0e3;
+                font-size:13px;
+            ">
+
+                <span class="bot-status"></span>
+
+                Đang hoạt động
+
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    for message in st.session_state.messages:
+
+        with st.chat_message(
+            message["role"]
+        ):
+
+            st.write(
+                message["content"]
+            )
+
+    question = st.chat_input(
+        "Hỏi SportBot..."
+    )
+
+    if question:
+
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": question
+            }
+        )
+
+        response = bot_reply(
+            question
+        )
+
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": response
+            }
+        )
+
+        st.rerun()
+
+
+# =========================================================
+# 16. ROUTER
+# =========================================================
+
+if page == "🏠 Trang chủ":
+
+    home_page()
+
+elif page == "🛍️ Cửa hàng":
+
+    shop_page()
+
+elif page.startswith("🛒"):
+
+    cart_page()
+
+elif page == "❤️ Yêu thích":
+
+    wishlist_page()
+
+elif page == "📚 Blog":
+
+    blog_page()
+
+elif page == "🤖 SportBot":
+
+    chatbot_page()
+
+
+# =========================================================
+# 17. FOOTER
+# =========================================================
+
+st.markdown(
+    """
+    <div class="footer">
+
+        <strong style="color:white">
+            PULSE SPORT
+        </strong>
+
+        <br><br>
+
+        Performance • Training • Running • Lifestyle
+
+        <br>
+
+        © 2026 PULSE SPORT.
+        All rights reserved.
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
