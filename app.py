@@ -19,6 +19,7 @@ st.set_page_config(
     page_icon="🏃",
     layout="wide",
     initial_sidebar_state="expanded",
+    st.image("123456.jpg")
 )
 
 APP_DIR = Path(__file__).resolve().parent
@@ -207,7 +208,6 @@ PRODUCTS: List[Dict] = [
 ]
 
 PRODUCT_INDEX = {p["id"]: p for p in PRODUCTS}
-st.image("123456.jpg")
 
 # =========================================================
 # BLOG - 20 BÀI KIẾN THỨC CÓ SẴN
